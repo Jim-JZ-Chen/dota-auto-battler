@@ -14,17 +14,13 @@ function HpBar({ cur, max, color }: { cur: number; max: number; color: string })
   );
 }
 
-// 普攻冷却小圆盘：锥形渐变随 atkTimer 填充，满了即出手
+// 普攻冷却小圆盘：灰色锥形随 atkTimer 填充，满了即出手
 function AtkCdDial({ timer, total }: { timer: number; total: number }) {
   const p = total > 0 ? Math.min(1, Math.max(0, 1 - timer / total)) : 1;
   return (
-    <div className="absolute top-0.5 right-0.5 w-4 h-4 sm:w-5 sm:h-5 rounded-full pointer-events-none border border-black/50"
+    <div className="absolute top-0.5 right-0.5 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full pointer-events-none"
       title={`攻击间隔 ${(total / 10).toFixed(1)}s`}
-      style={{ background: `conic-gradient(#fbbf24 ${p * 360}deg, rgba(0,0,0,.55) ${p * 360}deg)` }}>
-      <div className="absolute inset-[3px] rounded-full bg-zinc-900/85 flex items-center justify-center">
-        <span className="text-[7px] sm:text-[8px] leading-none tabular-nums text-amber-200 font-bold">{p >= 1 ? '⚔' : (timer / 10).toFixed(1)}</span>
-      </div>
-    </div>
+      style={{ background: `conic-gradient(rgba(212,212,216,.9) ${p * 360}deg, rgba(0,0,0,.35) ${p * 360}deg)` }} />
   );
 }
 
