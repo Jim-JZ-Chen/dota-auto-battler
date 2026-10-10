@@ -156,7 +156,9 @@ function rollShop(state: State) {
   state.shop = [];
   for (let i = 0; i < SHOP_SIZE; i++) {
     if (rng.p(0.55)) {
-      const d = ITEMS[rng.i(0, ITEMS.length - 1)];
+      // 小件(≤900金)出现率更高：前期有东西可买
+      let d = ITEMS[rng.i(0, ITEMS.length - 1)];
+      if (d.price > 900 && rng.p(0.5)) d = ITEMS[rng.i(0, ITEMS.length - 1)];
       state.shop.push({ kind: 'item', key: d.key, price: d.price, sold: false });
     } else {
       const d = SKILLS[rng.i(0, SKILLS.length - 1)];
