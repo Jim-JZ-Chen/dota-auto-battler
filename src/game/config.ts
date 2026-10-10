@@ -4,15 +4,26 @@ export interface HeroDef {
   hp: number; atk: number; armor: number; atkInterval: number; // tick(0.1s) 一次攻击
   innate: string; // 固有被动 key，在 sim 中 switch 实现
 }
+// 计数器词条：让部分装备/技能有成长性。计数挂在槽位上，随物品移动/交换
+export interface CounterDef {
+  stat: 'atk' | 'maxHp' | 'armor' | 'skilldmg' | 'heal';
+  per: number;          // 每次生效增加多少
+  perN?: number;        // 每触发 N 次才生效一次（默认 1）
+  mode: 'wave' | 'all'; // wave=每波开始复位；all=永久累积
+  trigger: 'kill' | 'crit' | 'hitTaken' | 'cast' | 'skillkill' | 'waveEnd';
+  label: string;        // UI 展示
+}
 export interface ItemDef {
   key: string; name: string; icon: string; price: number; desc: string;
   hp?: number; atk?: number; armor?: number; ias?: number; // ias: 攻速提升%
   crit?: number; dodge?: number; lifesteal?: number; regen?: number; // regen: HP/秒
   cleave?: number; thorns?: number; critMul?: number;
+  counter?: CounterDef;
 }
 export interface SkillDef {
   key: string; name: string; icon: string; price: number; desc: string;
   cd: number; // tick，0 = 被动
+  counter?: CounterDef;
 }
 export interface MobDef {
   key: string; name: string; icon: string;
@@ -33,11 +44,11 @@ export const HEROES: HeroDef[] = [
 ];
 
 export const ITEMS: ItemDef[] = [
-  { key: 'claw',    name: '攻击之爪',   icon: '🗡️', price: 450,  atk: 12, desc: '+12 攻击力' },
+  { key: 'claw',    name: '攻击之爪',   icon: '🗡️', price: 450,  atk: 12, desc: '+12 攻击力', counter: { stat: 'atk', per: 2, mode: 'wave', trigger: 'kill', label: '嗜血：本波每击杀+2攻' } },
   { key: 'chain',   name: '锁子甲',     icon: '🦺', price: 550,  armor: 5, desc: '+5 护甲' },
   { key: 'ring',    name: '治疗指环',   icon: '💍', price: 850,  regen: 6, desc: '+6 生命回复/秒' },
-  { key: 'vitality',name: '活力之球',   icon: '🔮', price: 1100, hp: 300, desc: '+300 生命上限' },
-  { key: 'crystalys',name:'水晶剑',     icon: '⚗️', price: 2100, atk: 32, crit: 10, desc: '+32 攻击，+10% 暴击' },
+  { key: 'vitality',name: '活力之球',   icon: '🔮', price: 1100, hp: 300, desc: '+300 生命上限', counter: { stat: 'maxHp', per: 50, mode: 'all', trigger: 'waveEnd', label: '成长：每波存活通关永久+50生命' } },
+  { key: 'crystalys',name:'水晶剑',     icon: '⚗️', price: 2100, atk: 32, crit: 10, desc: '+32 攻击，+10% 暴击', counter: { stat: 'atk', per: 1, mode: 'all', trigger: 'crit', label: '磨刀：每次暴击永久+1攻' } },
   { key: 'bfury',   name: '狂战斧',     icon: '🪓', price: 4200, atk: 60, cleave: 30, desc: '+60 攻击，30% 分裂伤害' },
   { key: 'bkb',     name: '黑皇杖',     icon: '🖤', price: 3900, atk: 20, hp: 250, desc: '+20 攻击，+250 生命' },
   { key: 'butterfly',name:'蝴蝶',       icon: '🦋', price: 5000, atk: 30, ias: 20, dodge: 25, desc: '+30 攻击，+20% 攻速，+25% 闪避' },
@@ -46,7 +57,7 @@ export const ITEMS: ItemDef[] = [
   { key: 'assault', name: '强袭胸甲',   icon: '🛡️', price: 5000, armor: 10, ias: 25, desc: '+10 护甲，+25% 攻速' },
   { key: 'mkb',     name: '金箍棒',     icon: '🐵', price: 4000, atk: 70, ias: 10, desc: '+70 攻击，+10% 攻速' },
   { key: 'satanic', name: '撒旦之邪力', icon: '🩸', price: 4800, atk: 50, lifesteal: 30, desc: '+50 攻击，+30% 吸血' },
-  { key: 'blade',   name: '刃甲',       icon: '🌵', price: 2800, armor: 6, thorns: 20, desc: '+6 护甲，反弹20%伤害' },
+  { key: 'blade',   name: '刃甲',       icon: '🌵', price: 2800, armor: 6, thorns: 20, desc: '+6 护甲，反弹20%伤害', counter: { stat: 'armor', per: 1, perN: 5, mode: 'all', trigger: 'hitTaken', label: '硬皮：每被攻击5次永久+1甲' } },
   { key: 'boots',   name: '动力鞋',     icon: '🥾', price: 1400, ias: 15, hp: 100, desc: '+15% 攻速，+100 生命' },
 ];
 
@@ -73,8 +84,8 @@ export function findRecipe(a: string, b: string): string | null {
 
 export const SKILLS: SkillDef[] = [
   { key: 'storm',   name: '剑刃风暴', icon: '🌪️', price: 1500, cd: 100, desc: '主动(10s)：对全体敌人造成 150+攻击×1.0 伤害' },
-  { key: 'heal',    name: '治疗波',   icon: '💚', price: 1200, cd: 80,  desc: '主动(8s)：治疗生命最低的队友 250 点' },
-  { key: 'finger',  name: '神灭斩',   icon: '⚡', price: 2600, cd: 160, desc: '主动(16s)：对当前目标造成 500 点巨额伤害' },
+  { key: 'heal',    name: '治疗波',   icon: '💚', price: 1200, cd: 80,  desc: '主动(8s)：治疗生命最低的队友 250 点', counter: { stat: 'heal', per: 25, mode: 'wave', trigger: 'cast', label: '愈战愈勇：本波每次施放治疗量+25' } },
+  { key: 'finger',  name: '神灭斩',   icon: '⚡', price: 2600, cd: 160, desc: '主动(16s)：对当前目标造成 500 点巨额伤害', counter: { stat: 'skilldmg', per: 100, mode: 'all', trigger: 'skillkill', label: '死亡之指：每次用神灭斩击杀永久+100伤害' } },
   { key: 'crit',    name: '致命一击', icon: '🎯', price: 1400, cd: 0,   desc: '被动：暴击率+20%' },
   { key: 'evasion', name: '风行',     icon: '🍃', price: 1400, cd: 0,   desc: '被动：闪避+20%' },
   { key: 'rage',    name: '狂战之血', icon: '😡', price: 1600, cd: 0,   desc: '被动：吸血+20%，生命低于40%时攻击+30%' },
