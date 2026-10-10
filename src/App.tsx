@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createState, step, heroStats, slotName, slotSellPrice, slotCounterDef, counterValue } from './game/sim';
-import type { State, Action, Unit, Slot } from './game/sim';
+import type { State, Action, Unit, Slot, Goods } from './game/sim';
 import { ITEMS, SKILLS, REFRESH_COST, RECIPES, findRecipe } from './game/config';
+import type { ItemDef, SkillDef } from './game/config';
 import './game/game.css';
 
 const defOf = (sl: Slot) => slotName(sl);
@@ -41,6 +42,9 @@ function MobCard({ u, idx, state, onClick }: { u: Unit; idx: number; state: Stat
       className={`relative rounded-lg border p-1.5 sm:p-2 select-none transition-all cursor-pointer border-red-800/60 bg-red-950/40 hover:border-red-500
       ${u.hitFlash > 0 ? 'brightness-150' : ''} ${u.atkFlash > 0 ? 'scale-[1.04]' : ''} ${!u.alive ? 'opacity-40 grayscale' : ''}`}>
       <Floats state={state} side="mob" idx={idx} />
+      {u.stunUntil > state.tick && u.alive && (
+        <span className="absolute top-0.5 left-0.5 text-xs sm:text-sm pointer-events-none animate-spin" title={`眩晕中（剩 ${((u.stunUntil - state.tick) / 10).toFixed(1)}s）`}>💫</span>
+      )}
       {state.phase === 'battle' && u.alive && (
         <AtkCdDial timer={u.atkTimer} total={u.atkInterval} />
       )}
@@ -74,6 +78,9 @@ function HeroColumn({ u, idx, state, targeting, onSlotClick, onHeaderClick, onSl
         className={`w-full rounded-lg border p-1.5 sm:p-2 text-center transition-all border-emerald-700/60 bg-emerald-950/40
         ${u.hitFlash > 0 ? 'brightness-150' : ''} ${u.atkFlash > 0 ? 'scale-[1.04]' : ''}
         ${shopPhase && !targeting ? 'cursor-grab active:cursor-grabbing touch-none select-none' : 'cursor-pointer'}`}>
+        {u.stunUntil > state.tick && u.alive && (
+          <span className="absolute top-0.5 left-0.5 text-xs sm:text-sm pointer-events-none animate-spin z-10" title={`眩晕中（剩 ${((u.stunUntil - state.tick) / 10).toFixed(1)}s）`}>💫</span>
+        )}
         {!shopPhase && u.alive && (
           <AtkCdDial timer={u.atkTimer} total={Math.max(3, Math.round(u.atkInterval / (1 + s.ias / 100)))} />
         )}
@@ -247,7 +254,7 @@ export default function Game() {
   const targeting = selShop !== null;
 
   // 详情浮层：查看某个槽位的物品/技能，或英雄/小怪本体
-  type Detail = { kind: 'slot'; heroIdx: number; slot: number } | { kind: 'hero'; heroIdx: number } | { kind: 'mob'; mobIdx: number };
+  type Detail = { kind: 'slot'; heroIdx: number; slot: number } | { kind: 'hero'; heroIdx: number } | { kind: 'mob'; mobIdx: number } | { kind: 'shop'; shopIdx: number };
   const [detail, setDetail] = useState<Detail | null>(() => {
     const od = (window as unknown as { __openDetail?: { heroIdx: number; slot: number } }).__openDetail;
     return od ? { kind: 'slot', ...od } : null;
@@ -355,6 +362,12 @@ export default function Game() {
       const h = state.heroes[detail.heroIdx];
       return h ? { u: h } : null;
     }
+    if (detail.kind === 'shop') {
+      const g = state.shop[detail.shopIdx];
+      if (!g) return null;
+      const d = g.kind === 'item' ? ITEMS.find(x => x.key === g.key)! : SKILLS.find(x => x.key === g.key)!;
+      return { g, d };
+    }
     const m = state.mobs[detail.mobIdx];
     return m ? { u: m } : null;
   })() : null;
@@ -391,7 +404,23 @@ export default function Game() {
             </div>
             <span className="text-zinc-400 text-xs shrink-0">详情 ➤</span>
           </button>
-          ) : 'u' in detailData && detailData.u ? (() => {
+          ) : detail.kind === 'shop' && 'g' in detailData ? (() => {
+            const { g, d } = detailData as { g: Goods; d: ItemDef | SkillDef };
+            return (
+          <button onClick={() => setShowModal(true)} title="点击查看详细介绍"
+            className={`basis-full order-last flex items-center gap-2 px-3 py-2 rounded border text-xs sm:text-sm min-h-[48px] w-full text-left cursor-pointer hover:brightness-125 transition-all
+            ${g.kind === 'item' ? 'bg-amber-900/70 border-amber-500' : 'bg-violet-900/70 border-violet-500'}`}>
+            <span className="text-xl sm:text-2xl shrink-0">{d.icon}</span>
+            <div className="flex-1 min-w-0 leading-snug">
+              <div className="font-bold whitespace-nowrap truncate">{d.name}
+                <span className="font-normal text-zinc-400 text-[10px] sm:text-xs">（商店 · {g.kind === 'item' ? '装备' : '技能'} · 💰{g.price}{g.sold ? ' · 已售' : ''}）</span>
+              </div>
+              <div className="text-[10px] sm:text-xs text-zinc-200/90 truncate">{d.desc}</div>
+            </div>
+            <span className="text-zinc-400 text-xs shrink-0">详情 ➤</span>
+          </button>
+            );
+          })() : 'u' in detailData && detailData.u ? (() => {
             const u = detailData.u;
             const isMob = detail.kind === 'mob';
             const s = isMob ? null : heroStats(u);
@@ -415,7 +444,7 @@ export default function Game() {
         ) : (
           <div className="basis-full order-last flex items-center gap-2 px-3 py-2 rounded border border-dashed border-zinc-700 text-xs sm:text-sm min-h-[48px] w-full text-zinc-500">
             <span className="text-xl sm:text-2xl opacity-40">🔍</span>
-            <span>点击已装备的物品/技能/英雄/怪物查看简介，再点弹出详情</span>
+            <span>点击装备/技能/英雄/怪物/商店商品查看简介，再点弹出详情</span>
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
@@ -458,7 +487,69 @@ export default function Game() {
       {showModal && detailData && detail && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowModal(false)}>
           <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-zinc-700 p-4 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            {detail.kind === 'slot' && 'sl' in detailData && detailData.sl ? (() => {
+            {detail.kind === 'shop' && 'g' in detailData ? (() => {
+              const { g, d } = detailData as { g: Goods; d: ItemDef | SkillDef };
+              const itD = g.kind === 'item' ? (d as ItemDef) : null;
+              const skD = g.kind === 'skill' ? (d as SkillDef) : null;
+              const cd = itD?.counter ?? skD?.counter;
+              const asPart = g.kind === 'item' ? RECIPES.filter(r => r.parts.includes(g.key)) : [];
+              const it = (key: string) => ITEMS.find(i => i.key === key);
+              const afford = state.gold >= g.price && !g.sold;
+              return (
+                <>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-4xl">{d.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-base">{d.name}</div>
+                      <div className="text-xs text-zinc-400">商店 · {g.kind === 'item' ? '装备' : '技能'} · 💰{g.price}{g.sold ? ' · 已售' : ''}</div>
+                    </div>
+                    <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-zinc-300 text-lg px-2">✕</button>
+                  </div>
+                  <div className="text-sm text-zinc-200 leading-relaxed mb-3">{d.desc}</div>
+                  {cd && (
+                    <div className={`rounded-lg border p-2.5 mb-3 text-xs leading-relaxed ${cd.mode === 'all' ? 'border-lime-700 bg-lime-950/40 text-lime-200' : 'border-orange-700 bg-orange-950/40 text-orange-200'}`}>
+                      <div className="font-bold mb-1">📈 {cd.label}</div>
+                      <div>{cd.mode === 'wave' ? '每波开始复位' : '永久累积'}{cd.perN ? `，每${cd.perN}次触发+${cd.per}` : ''}</div>
+                    </div>
+                  )}
+                  {asPart.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs font-bold text-amber-300 mb-1.5">🔨 合成配方</div>
+                      <div className="flex flex-col gap-1.5">
+                        {asPart.map((r, i) => {
+                          const hl = (key: string) => key === g.key ? 'ring-1 ring-amber-400' : '';
+                          return (
+                            <div key={i} className="flex items-center gap-1.5 text-xs bg-zinc-800/70 rounded-lg px-2 py-1.5">
+                              <span className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 ${hl(r.parts[0])}`} title={it(r.parts[0])?.name}>
+                                <span className="text-base">{it(r.parts[0])?.icon}</span>
+                                <span className="text-zinc-200">{it(r.parts[0])?.name}</span>
+                              </span>
+                              <span className="text-zinc-500">+</span>
+                              <span className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 ${hl(r.parts[1])}`} title={it(r.parts[1])?.name}>
+                                <span className="text-base">{it(r.parts[1])?.icon}</span>
+                                <span className="text-zinc-200">{it(r.parts[1])?.name}</span>
+                              </span>
+                              <span className="text-amber-400 mx-0.5">→</span>
+                              <span className="flex items-center gap-1 rounded px-1 py-0.5 bg-amber-800/60 font-bold" title={it(r.result)?.desc}>
+                                <span className="text-base">{it(r.result)?.icon}</span>
+                                <span className="text-amber-100">{it(r.result)?.name}</span>
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {!g.sold && (
+                    <button disabled={!afford}
+                      onClick={() => { setSelShop(detail.shopIdx); setShowModal(false); }}
+                      className={`w-full py-2 rounded border-2 text-sm font-bold min-h-[44px] ${afford ? 'border-sky-500 text-sky-300 hover:bg-sky-950' : 'border-zinc-700 text-zinc-500'}`}>
+                      🎯 选择购买（再点英雄槽位装入）
+                    </button>
+                  )}
+                </>
+              );
+            })() : detail.kind === 'slot' && 'sl' in detailData && detailData.sl ? (() => {
               const { sl, d, h } = detailData as { sl: Slot; d: ReturnType<typeof defOf>; h: Unit };
               const cd = slotCounterDef(sl);
               const n = h.slotCounters[detail.slot] ?? 0;
@@ -531,6 +622,7 @@ export default function Game() {
                 ['攻击间隔', `${(u.atkInterval / 10).toFixed(1)} 秒`],
                 ['攻速', `${(10 / u.atkInterval).toFixed(1)} 次/秒`],
                 ['赏金', `${u.bounty}💰`],
+                ...(u.stunUntil > state.tick ? [['状态', `💫眩晕 剩 ${((u.stunUntil - state.tick) / 10).toFixed(1)} 秒`] as [string, string]] : []),
               ] : [
                 ['生命', `${Math.max(0, Math.ceil(u.hp))} / ${s!.maxHp}`],
                 ['攻击', `${s!.atk}`],
@@ -543,6 +635,7 @@ export default function Game() {
                 ...(s!.cleave > 0 ? [['分裂', `${s!.cleave}%`] as [string, string]] : []),
                 ...(s!.regen > 0 ? [['回复', `${s!.regen}/秒`] as [string, string]] : []),
                 ...(s!.thorns > 0 ? [['反弹', `${s!.thorns}%`] as [string, string]] : []),
+                ...(u.stunUntil > state.tick ? [['状态', `💫眩晕 剩 ${((u.stunUntil - state.tick) / 10).toFixed(1)} 秒`] as [string, string]] : []),
               ];
               return (
                 <>
@@ -582,7 +675,7 @@ export default function Game() {
         {/* 分隔线 */}
         <div className="border-t border-dashed border-zinc-700 my-2 sm:my-3 relative">
           <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-950 px-3 text-xs text-zinc-400">
-            {state.phase === 'battle' ? '⚔️ 激战中' : selShop !== null ? '🎯 已选中商品，点英雄槽位购买装入' : '🏕️ 休整中 — 点商品再点槽位装入；按住物品拖动可换格/合成；按住英雄头像拖动可调整站位'}
+            {state.phase === 'battle' ? '⚔️ 激战中' : selShop !== null ? '🎯 已选中商品，点英雄槽位购买装入' : '🏕️ 休整中 — 点商品看简介，双击商品选中后再点槽位装入；按住物品拖动可换格/合成'}
           </span>
         </div>
 
@@ -658,7 +751,9 @@ export default function Game() {
                 const d = g.kind === 'item' ? ITEMS.find(x => x.key === g.key)! : SKILLS.find(x => x.key === g.key)!;
                 const afford = state.gold >= g.price;
                 return (
-                  <button key={i} disabled={g.sold || !afford} onClick={() => { setSelShop(selShop === i ? null : i); setDetail(null); dragRef.current = null; setGhost(null); }}
+                  <button key={i} disabled={g.sold || !afford}
+                    onClick={() => { setDetail({ kind: 'shop', shopIdx: i }); setShowModal(false); dragRef.current = null; setGhost(null); }}
+                    onDoubleClick={() => { if (!g.sold && afford) { setSelShop(selShop === i ? null : i); setShowModal(false); } }}
                     className={`rounded-lg border p-1.5 text-left h-20 sm:h-24 overflow-hidden transition-all active:scale-95
                       ${g.sold ? 'opacity-30' : afford ? 'border-amber-700/50 bg-zinc-800/80 active:bg-zinc-700' : 'border-zinc-800 bg-zinc-900 opacity-50'}
                       ${selShop === i ? 'ring-2 ring-sky-400 border-sky-500 scale-[1.02]' : ''}`}>
