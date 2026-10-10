@@ -14,6 +14,20 @@ function HpBar({ cur, max, color }: { cur: number; max: number; color: string })
   );
 }
 
+// 普攻冷却小圆盘：锥形渐变随 atkTimer 填充，满了即出手
+function AtkCdDial({ timer, total }: { timer: number; total: number }) {
+  const p = total > 0 ? Math.min(1, Math.max(0, 1 - timer / total)) : 1;
+  return (
+    <div className="absolute top-0.5 right-0.5 w-4 h-4 sm:w-5 sm:h-5 rounded-full pointer-events-none border border-black/50"
+      title={`攻击间隔 ${(total / 10).toFixed(1)}s`}
+      style={{ background: `conic-gradient(#fbbf24 ${p * 360}deg, rgba(0,0,0,.55) ${p * 360}deg)` }}>
+      <div className="absolute inset-[3px] rounded-full bg-zinc-900/85 flex items-center justify-center">
+        <span className="text-[7px] sm:text-[8px] leading-none tabular-nums text-amber-200 font-bold">{p >= 1 ? '⚔' : (timer / 10).toFixed(1)}</span>
+      </div>
+    </div>
+  );
+}
+
 function Floats({ state, side, idx }: { state: State; side: 'hero' | 'mob'; idx: number }) {
   const fs = state.floats.filter(f => f.side === side && f.unit === idx);
   return (
@@ -31,6 +45,9 @@ function MobCard({ u, idx, state, onClick }: { u: Unit; idx: number; state: Stat
       className={`relative rounded-lg border p-1.5 sm:p-2 select-none transition-all cursor-pointer border-red-800/60 bg-red-950/40 hover:border-red-500
       ${u.hitFlash > 0 ? 'brightness-150' : ''} ${u.atkFlash > 0 ? 'scale-[1.04]' : ''} ${!u.alive ? 'opacity-40 grayscale' : ''}`}>
       <Floats state={state} side="mob" idx={idx} />
+      {state.phase === 'battle' && u.alive && (
+        <AtkCdDial timer={u.atkTimer} total={u.atkInterval} />
+      )}
       <div className="text-center leading-none h-7 sm:h-9 text-2xl sm:text-3xl">{u.icon}</div>
       <div className="text-center text-[10px] sm:text-xs font-bold text-red-200 truncate mt-0.5">{u.name}</div>
       <HpBar cur={u.hp} max={u.baseHp} color="bg-red-500" />
@@ -61,6 +78,9 @@ function HeroColumn({ u, idx, state, targeting, onSlotClick, onHeaderClick, onSl
         className={`w-full rounded-lg border p-1.5 sm:p-2 text-center transition-all border-emerald-700/60 bg-emerald-950/40
         ${u.hitFlash > 0 ? 'brightness-150' : ''} ${u.atkFlash > 0 ? 'scale-[1.04]' : ''}
         ${shopPhase && !targeting ? 'cursor-grab active:cursor-grabbing touch-none select-none' : 'cursor-pointer'}`}>
+        {!shopPhase && u.alive && (
+          <AtkCdDial timer={u.atkTimer} total={Math.max(3, Math.round(u.atkInterval / (1 + s.ias / 100)))} />
+        )}
         <div className="leading-none h-7 sm:h-10 text-2xl sm:text-4xl">{u.icon}</div>
         <div className="text-[10px] sm:text-sm font-bold text-emerald-100 truncate mt-0.5">{u.name}</div>
         <HpBar cur={u.hp} max={s.maxHp} color="bg-emerald-500" />
