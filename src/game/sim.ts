@@ -21,6 +21,7 @@ export interface Unit {
   cds: Record<string, number>; // 技能剩余冷却(tick)
   atkTimer: number;
   alive: boolean;
+  stunUntil: number; // 眩晕到该 tick 为止：不能攻击/施法，计时器冻结
   buff: Buff | null;
   slotCounters: number[]; // 每个槽位的计数器（装备/技能的成长性词条）
   // 展示用：受击/攻击闪动计数
@@ -121,7 +122,7 @@ function mkHero(def: HeroDef): Unit {
     side: 'hero', key: def.key, name: def.name, icon: def.icon, desc: def.desc, innate: def.innate,
     baseHp: def.hp, hp: def.hp, atk: def.atk, armor: def.armor, atkInterval: def.atkInterval,
     bounty: 0, slots: Array(MAX_SLOTS).fill(null), cds: {}, atkTimer: def.atkInterval,
-    alive: true, buff: null, slotCounters: Array(MAX_SLOTS).fill(0), hitFlash: 0, atkFlash: 0,
+    alive: true, stunUntil: 0, buff: null, slotCounters: Array(MAX_SLOTS).fill(0), hitFlash: 0, atkFlash: 0,
   };
 }
 function mkMob(def: { key: string; name: string; icon: string; }, w: number, rng: Rng): Unit {
@@ -132,7 +133,7 @@ function mkMob(def: { key: string; name: string; icon: string; }, w: number, rng
     side: 'mob', key: base.key, name: base.name, icon: base.icon, desc: '', innate: '',
     baseHp: hp, hp, atk: Math.round(base.atk * waveAtkScale(w)), armor: base.armor + Math.floor(w / 4),
     atkInterval: base.atkInterval, bounty: Math.round(base.bounty * waveBountyScale(w)),
-    slots: [], cds: {}, atkTimer: rng.i(4, base.atkInterval), alive: true, buff: null, slotCounters: [], hitFlash: 0, atkFlash: 0,
+    slots: [], cds: {}, atkTimer: rng.i(4, base.atkInterval), alive: true, stunUntil: 0, buff: null, slotCounters: [], hitFlash: 0, atkFlash: 0,
   };
 }
 
@@ -396,6 +397,8 @@ function heroTick(state: State, u: Unit, ui: number) {
   const s = heroStats(u);
   // 回复
   if (s.regen > 0 && u.hp < s.maxHp) u.hp = Math.min(s.maxHp, u.hp + s.regen / 10);
+  // 眩晕：不能施法/攻击，冷却与普攻计时器冻结
+  if (state.tick < u.stunUntil) return;
   // buff 过期
   if (u.buff && state.tick >= u.buff.until) u.buff = null;
   // 技能冷却
@@ -433,6 +436,8 @@ function heroTick(state: State, u: Unit, ui: number) {
 function mobTick(state: State, m: Unit, mi: number) {
   if (!m.alive) return;
   if (m.buff && state.tick >= m.buff.until) m.buff = null;
+  // 眩晕：不能攻击，普攻计时器冻结
+  if (state.tick < m.stunUntil) return;
   if (--m.atkTimer > 0) return;
   m.atkTimer = m.atkInterval;
   // 对位攻击：优先打同一列的英雄，该列无人则打第一个存活
@@ -477,6 +482,18 @@ function resolvePending(state: State) {
     if (!dst?.alive) continue; // 目标已死，落空
     const dealt = dealDamage(state, src?.alive ? src : null, dst, p.dstIdx, p.raw, { dodgeable: p.dodgeable, cls: p.crit ? 'crit' : 'dmg' });
     if (dealt > 0 && src?.alive && p.srcSide === 'hero') {
+      // 重击（碎颅锤/深渊之刃）：普攻概率眩晕目标
+      for (const sl of src.slots) {
+        if (sl?.kind !== 'item') continue;
+        const d = itemDef(sl.key);
+        if (!d.bashChance || !dst.alive) continue;
+        if (state.rng.p(d.bashChance / 100)) {
+          const until = state.tick + (d.bashTicks ?? 15);
+          if (until > dst.stunUntil) dst.stunUntil = until;
+          addFloat(state, dst, dst.side, p.dstIdx, '💫眩晕', 'skill');
+          if (d.bashDmg) { dst.hp -= d.bashDmg; dst.hitFlash = 2; if (dst.hp <= 0) killUnit(state, dst, src); }
+        }
+      }
       // 暴击计数（水晶剑磨刀等）
       if (p.crit) {
         for (let si = 0; si < src.slots.length; si++) {
@@ -527,7 +544,7 @@ function battleTick(state: State) {
       }
     });
     // 战后小幅恢复
-    state.heroes.forEach((h, i) => { if (h.alive) heal(state, h, i, Math.round(heroStats(h).maxHp * 0.3)); else { h.alive = true; h.hp = Math.round(heroStats(h).maxHp * 0.5); addFloat(state, h, 'hero', i, '复活', 'heal'); } });
+    state.heroes.forEach((h, i) => { h.stunUntil = 0; if (h.alive) heal(state, h, i, Math.round(heroStats(h).maxHp * 0.3)); else { h.alive = true; h.hp = Math.round(heroStats(h).maxHp * 0.5); addFloat(state, h, 'hero', i, '复活', 'heal'); } });
     state.wave++;
     state.phase = 'shop';
     state.pending = []; // 波次结束，清空在途弹道（场上已无目标）
