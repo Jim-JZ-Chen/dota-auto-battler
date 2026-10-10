@@ -18,6 +18,7 @@ export interface ItemDef {
   hp?: number; atk?: number; armor?: number; ias?: number; // ias: 攻速提升%
   crit?: number; dodge?: number; lifesteal?: number; regen?: number; // regen: HP/秒
   cleave?: number; thorns?: number; critMul?: number;
+  bashChance?: number; bashTicks?: number; bashDmg?: number; // 重击：普攻概率眩晕（bashTicks 个 tick）并附加伤害
   counter?: CounterDef;
 }
 export interface SkillDef {
@@ -62,6 +63,7 @@ export const ITEMS: ItemDef[] = [
   { key: 'vanguard',name: '先锋盾',     icon: '🛡️', price: 1900, hp: 250, armor: 2, regen: 4, desc: '+250 生命，+2 护甲，+4 回复/秒' },
   { key: 'maelstrom',name:'漩涡',       icon: '🌀', price: 2500, atk: 28, ias: 20, desc: '+28 攻击，+20% 攻速' },
   { key: 'crystalys',name:'水晶剑',     icon: '⚗️', price: 2100, atk: 32, crit: 10, desc: '+32 攻击，+10% 暴击', counter: { stat: 'atk', per: 1, mode: 'all', trigger: 'crit', label: '磨刀：每次暴击永久+1攻' } },
+  { key: 'basher',  name: '碎颅锤',     icon: '🔨', price: 1600, atk: 14, bashChance: 15, bashTicks: 15, desc: '+14 攻击，普攻15%几率眩晕目标1.5秒' },
   { key: 'bfury',   name: '狂战斧',     icon: '🪓', price: 4200, atk: 60, cleave: 30, desc: '+60 攻击，30% 分裂伤害' },
   { key: 'bkb',     name: '黑皇杖',     icon: '🖤', price: 3900, atk: 20, hp: 250, desc: '+20 攻击，+250 生命' },
   { key: 'butterfly',name:'蝴蝶',       icon: '🦋', price: 5000, atk: 30, ias: 20, dodge: 25, desc: '+30 攻击，+20% 攻速，+25% 闪避' },
@@ -71,6 +73,7 @@ export const ITEMS: ItemDef[] = [
   { key: 'mkb',     name: '金箍棒',     icon: '🐵', price: 4000, atk: 70, ias: 10, desc: '+70 攻击，+10% 攻速' },
   { key: 'satanic', name: '撒旦之邪力', icon: '🩸', price: 4800, atk: 50, lifesteal: 30, desc: '+50 攻击，+30% 吸血' },
   { key: 'blade',   name: '刃甲',       icon: '🌵', price: 2800, armor: 6, thorns: 20, desc: '+6 护甲，反弹20%伤害', counter: { stat: 'armor', per: 1, perN: 5, mode: 'all', trigger: 'hitTaken', label: '硬皮：每被攻击5次永久+1甲' } },
+  { key: 'abyssal', name: '深渊之刃',   icon: '⚒️', price: 2900, atk: 25, hp: 250, bashChance: 25, bashTicks: 20, bashDmg: 60, desc: '+25 攻击，+250 生命，普攻25%几率眩晕2秒并造成60点重击伤害' },
 ];
 
 // 合成配方：A + B → 成品（顺序无关），参照 Dota2 配方树，小件→中件→大件
@@ -85,6 +88,7 @@ export const RECIPES: { parts: [string, string]; result: string }[] = [
   { parts: ['bracer', 'claw'],         result: 'sange' },    // 护腕+攻击之爪 → 散华
   { parts: ['ring', 'buckler'],        result: 'vanguard' }, // 治疗指环+小圆盾 → 先锋盾
   { parts: ['claw', 'gloves'],         result: 'maelstrom' },// 攻击之爪+加速手套 → 漩涡
+  { parts: ['band', 'gloves'],         result: 'basher' },   // 力量腰带+加速手套 → 碎颅锤
   { parts: ['buckler', 'cloak'],       result: 'assault' },  // 小圆盾+闪避斗篷 → 强袭胸甲
   // —— 基础件/中件 → 大件 ——
   { parts: ['claw', 'claw'],           result: 'crystalys' },// 攻击之爪×2 → 水晶剑
@@ -96,6 +100,7 @@ export const RECIPES: { parts: [string, string]; result: string }[] = [
   { parts: ['vanguard', 'vitality'],   result: 'heart' },    // 先锋盾+活力之球 → 恐鳌之心
   { parts: ['sange', 'vitality'],      result: 'bkb' },      // 散华+活力之球 → 黑皇杖
   { parts: ['chain', 'chain'],         result: 'blade' },    // 锁子甲×2 → 刃甲
+  { parts: ['basher', 'vitality'],     result: 'abyssal' },  // 碎颅锤+活力之球 → 深渊之刃
 ];
 // 查找配方：两件装备能合成什么（无序匹配），无配方返回 null
 export function findRecipe(a: string, b: string): string | null {
