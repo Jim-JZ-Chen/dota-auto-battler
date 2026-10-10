@@ -66,7 +66,7 @@ function HeroColumn({ u, idx, state, targeting, onSlotClick, onHeaderClick, onSl
         <HpBar cur={u.hp} max={s.maxHp} color="bg-emerald-500" />
         <div className="text-[9px] sm:text-[10px] text-zinc-300 tabular-nums">{Math.max(0, Math.ceil(u.hp))}/{s.maxHp}</div>
         <div className="text-[8px] sm:text-[10px] text-zinc-400 leading-tight mt-0.5 whitespace-nowrap truncate">
-          攻{s.atk} 甲{s.armor} 暴{s.crit}%{s.dodge > 0 ? ` 闪${s.dodge}%` : ''}{s.lifesteal > 0 ? ` 吸${s.lifesteal}%` : ''}
+          攻{s.atk} 甲{s.armor} 暴{s.crit}% 间{(Math.max(3, Math.round(u.atkInterval / (1 + s.ias / 100))) / 10).toFixed(1)}s{s.dodge > 0 ? ` 闪${s.dodge}%` : ''}{s.lifesteal > 0 ? ` 吸${s.lifesteal}%` : ''}
         </div>
       </div>
       <div className="flex flex-col gap-1 sm:gap-1.5 w-full" data-slots={idx}>
@@ -389,7 +389,7 @@ export default function Game() {
                     <span className="font-normal text-zinc-400 text-[10px] sm:text-xs">（{isMob ? `怪物 · 赏金${u.bounty}💰` : '英雄'} · 生命 {Math.max(0, Math.ceil(u.hp))}/{isMob ? u.baseHp : s!.maxHp}）</span>
                   </div>
                   <div className="text-[10px] sm:text-xs text-zinc-200/90 truncate">
-                    攻{isMob ? u.atk : s!.atk} 甲{isMob ? Math.max(0, u.armor + (u.buff?.armorDelta ?? 0)) : s!.armor} 攻速{(10 / (isMob ? (u.atkInterval ?? 10) : Math.max(3, Math.round((u.atkInterval ?? 10) / (1 + s!.ias / 100))))).toFixed(1)}/s
+                    攻{isMob ? u.atk : s!.atk} 甲{isMob ? Math.max(0, u.armor + (u.buff?.armorDelta ?? 0)) : s!.armor} 攻速{(10 / (isMob ? (u.atkInterval ?? 10) : Math.max(3, Math.round((u.atkInterval ?? 10) / (1 + s!.ias / 100))))).toFixed(1)}/s 间隔{((isMob ? (u.atkInterval ?? 10) : Math.max(3, Math.round((u.atkInterval ?? 10) / (1 + s!.ias / 100)))) / 10).toFixed(1)}s
                   </div>
                 </div>
                 <span className="text-zinc-400 text-xs shrink-0">详情 ➤</span>
@@ -512,12 +512,14 @@ export default function Game() {
                 ['生命', `${Math.max(0, Math.ceil(u.hp))} / ${u.baseHp}`],
                 ['攻击', `${u.atk}`],
                 ['护甲', `${Math.max(0, u.armor + (u.buff?.armorDelta ?? 0))}${u.buff?.armorDelta ? `（含减益${u.buff.armorDelta}）` : ''}`],
+                ['攻击间隔', `${(u.atkInterval / 10).toFixed(1)} 秒`],
                 ['攻速', `${(10 / u.atkInterval).toFixed(1)} 次/秒`],
                 ['赏金', `${u.bounty}💰`],
               ] : [
                 ['生命', `${Math.max(0, Math.ceil(u.hp))} / ${s!.maxHp}`],
                 ['攻击', `${s!.atk}`],
                 ['护甲', `${s!.armor}`],
+                ['攻击间隔', `${(Math.max(3, Math.round(u.atkInterval / (1 + s!.ias / 100))) / 10).toFixed(1)} 秒（基础 ${(u.atkInterval / 10).toFixed(1)}）`],
                 ['攻速', `${(10 / Math.max(3, Math.round(u.atkInterval / (1 + s!.ias / 100)))).toFixed(1)} 次/秒`],
                 ['暴击', `${s!.crit}%（×${(s!.critMul / 100).toFixed(1)}）`],
                 ...(s!.dodge > 0 ? [['闪避', `${s!.dodge}%`] as [string, string]] : []),
