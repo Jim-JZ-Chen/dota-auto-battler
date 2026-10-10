@@ -1,0 +1,21 @@
+.float-text {
+  position: absolute;
+  top: 0;
+  font-size: 11px;
+  font-weight: 800;
+  animation: floatUp 1s ease-out forwards;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,.9);
+  pointer-events: none;
+}
+@keyframes floatUp {
+  0%   { transform: translateY(0); opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateY(-26px); opacity: 0; }
+}
+.float-dmg { color: #fca5a5; }
+.float-crit { color: #fb923c; font-size: 13px; }
+.float-skilldmg { color: #e879f9; }
+.float-heal { color: #4ade80; }
+.float-skill { color: #c084fc; }
+.float-dodge { color: #93c5fd; }
