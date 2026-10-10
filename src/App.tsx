@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createState, step, heroStats, slotName, slotSellPrice } from './game/sim';
+import { createState, step, heroStats, slotName, slotSellPrice, slotCounterDef, counterValue } from './game/sim';
 import type { State, Action, Unit, Slot } from './game/sim';
 import { ITEMS, SKILLS, REFRESH_COST, RECIPES, findRecipe } from './game/config';
 import './game/game.css';
@@ -112,6 +112,17 @@ function HeroColumn({ u, idx, state, targeting, onSlotClick, onHeaderClick, onSl
                 <span className="hidden sm:block text-[10px] text-zinc-200 truncate max-w-[70%] relative">{defOf(sl).name}</span>
               </>
             ) : <span className="text-zinc-600 text-xs">+</span>}
+            {/* 计数器角标：成长性装备/技能的累计层数 */}
+            {sl && (() => {
+              const cd = slotCounterDef(sl);
+              const n = u.slotCounters[si] ?? 0;
+              if (!cd || n <= 0) return null;
+              return (
+                <span className={`absolute bottom-0 right-0.5 text-[8px] sm:text-[9px] font-bold tabular-nums leading-tight pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,.9)] ${cd.mode === 'all' ? 'text-lime-300' : 'text-orange-300'}`}>
+                  ×{n}
+                </span>
+              );
+            })()}
             {cdPct > 0 && (
               <span className="absolute inset-0 flex items-center justify-center text-xs sm:text-sm font-bold text-sky-200 tabular-nums drop-shadow-[0_1px_1px_rgba(0,0,0,.9)] pointer-events-none">
                 {cdSec.toFixed(1)}
@@ -351,6 +362,14 @@ export default function Game() {
                 <span className="font-normal text-zinc-400 text-[10px] sm:text-xs">（{detailData.sl.kind === 'item' ? '装备' : detailData.sl.kind === 'skill' ? '技能' : '固有技能'} · {detailData.h.icon}{detailData.h.name}）</span>
               </div>
               <div className="text-[10px] sm:text-xs text-zinc-200/90 line-clamp-2">{detailData.d.desc}
+                {(() => {
+                  const cd = slotCounterDef(detailData.sl);
+                  if (!cd) return null;
+                  const n = detailData.h.slotCounters[detail.slot] ?? 0;
+                  const v = counterValue(cd, n);
+                  const statName = { atk: '攻', maxHp: '生命', armor: '甲', skilldmg: '技能伤害', heal: '治疗量' }[cd.stat];
+                  return <span className={cd.mode === 'all' ? 'text-lime-300/90' : 'text-orange-300/90'}>　📈 {cd.label}（当前 ×{n}，+{v}{statName}{cd.mode === 'wave' ? '，每波复位' : '，永久累积'}）</span>;
+                })()}
                 {detailData.sl.kind === 'item' && (() => {
                   const k = detailData.sl.key;
                   const asPart = RECIPES.filter(r => r.parts.includes(k));
