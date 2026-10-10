@@ -44,10 +44,23 @@ export const HEROES: HeroDef[] = [
 ];
 
 export const ITEMS: ItemDef[] = [
+  // —— 小件（前期过渡，都能往上合成）——
+  { key: 'gloves',  name: '加速手套',   icon: '🧤', price: 300,  ias: 8, desc: '+8% 攻速' },
+  { key: 'bracer',  name: '护腕',       icon: '🩹', price: 250,  hp: 60, atk: 3, desc: '+60 生命，+3 攻击' },
+  { key: 'blight',  name: '枯萎之石',   icon: '🪨', price: 250,  atk: 4, desc: '+4 攻击力' },
+  { key: 'band',    name: '力量腰带',   icon: '🎗️', price: 450,  hp: 120, desc: '+120 生命上限' },
+  { key: 'buckler', name: '小圆盾',     icon: '🛞', price: 350,  armor: 2, desc: '+2 护甲' },
+  { key: 'cloak',   name: '闪避斗篷',   icon: '🧥', price: 800,  dodge: 8, desc: '+8% 闪避' },
+  // —— 基础件 ——
   { key: 'claw',    name: '攻击之爪',   icon: '🗡️', price: 450,  atk: 12, desc: '+12 攻击力', counter: { stat: 'atk', per: 2, mode: 'wave', trigger: 'kill', label: '嗜血：本波每击杀+2攻' } },
   { key: 'chain',   name: '锁子甲',     icon: '🦺', price: 550,  armor: 5, desc: '+5 护甲' },
   { key: 'ring',    name: '治疗指环',   icon: '💍', price: 850,  regen: 6, desc: '+6 生命回复/秒' },
   { key: 'vitality',name: '活力之球',   icon: '🔮', price: 1100, hp: 300, desc: '+300 生命上限', counter: { stat: 'maxHp', per: 50, mode: 'all', trigger: 'waveEnd', label: '成长：每波存活通关永久+50生命' } },
+  { key: 'boots',   name: '动力鞋',     icon: '🥾', price: 1400, ias: 15, hp: 100, desc: '+15% 攻速，+100 生命' },
+  // —— 中件 ——
+  { key: 'sange',   name: '散华',       icon: '🌸', price: 2000, atk: 16, hp: 160, desc: '+16 攻击，+160 生命' },
+  { key: 'vanguard',name: '先锋盾',     icon: '🛡️', price: 1900, hp: 250, armor: 2, regen: 4, desc: '+250 生命，+2 护甲，+4 回复/秒' },
+  { key: 'maelstrom',name:'漩涡',       icon: '🌀', price: 2500, atk: 28, ias: 20, desc: '+28 攻击，+20% 攻速' },
   { key: 'crystalys',name:'水晶剑',     icon: '⚗️', price: 2100, atk: 32, crit: 10, desc: '+32 攻击，+10% 暴击', counter: { stat: 'atk', per: 1, mode: 'all', trigger: 'crit', label: '磨刀：每次暴击永久+1攻' } },
   { key: 'bfury',   name: '狂战斧',     icon: '🪓', price: 4200, atk: 60, cleave: 30, desc: '+60 攻击，30% 分裂伤害' },
   { key: 'bkb',     name: '黑皇杖',     icon: '🖤', price: 3900, atk: 20, hp: 250, desc: '+20 攻击，+250 生命' },
@@ -58,21 +71,31 @@ export const ITEMS: ItemDef[] = [
   { key: 'mkb',     name: '金箍棒',     icon: '🐵', price: 4000, atk: 70, ias: 10, desc: '+70 攻击，+10% 攻速' },
   { key: 'satanic', name: '撒旦之邪力', icon: '🩸', price: 4800, atk: 50, lifesteal: 30, desc: '+50 攻击，+30% 吸血' },
   { key: 'blade',   name: '刃甲',       icon: '🌵', price: 2800, armor: 6, thorns: 20, desc: '+6 护甲，反弹20%伤害', counter: { stat: 'armor', per: 1, perN: 5, mode: 'all', trigger: 'hitTaken', label: '硬皮：每被攻击5次永久+1甲' } },
-  { key: 'boots',   name: '动力鞋',     icon: '🥾', price: 1400, ias: 15, hp: 100, desc: '+15% 攻速，+100 生命' },
 ];
 
-// 合成配方：A + B → 成品（顺序无关），参照 Dota2 配方树，合成比直接买成品省钱
+// 合成配方：A + B → 成品（顺序无关），参照 Dota2 配方树，小件→中件→大件
 export const RECIPES: { parts: [string, string]; result: string }[] = [
-  { parts: ['claw', 'claw'],         result: 'crystalys' }, // 攻击之爪×2 → 水晶剑
-  { parts: ['crystalys', 'crystalys'],result: 'daedalus' }, // 水晶剑×2 → 大炮
-  { parts: ['crystalys', 'claw'],    result: 'bfury' },     // 水晶剑+攻击之爪 → 狂战斧
-  { parts: ['crystalys', 'boots'],   result: 'mkb' },       // 水晶剑+动力鞋 → 金箍棒
-  { parts: ['crystalys', 'vitality'],result: 'satanic' },   // 水晶剑+活力之球 → 撒旦
-  { parts: ['boots', 'boots'],       result: 'butterfly' }, // 动力鞋×2 → 蝴蝶
-  { parts: ['chain', 'boots'],       result: 'assault' },   // 锁子甲+动力鞋 → 强袭胸甲
-  { parts: ['vitality', 'vitality'], result: 'heart' },     // 活力之球×2 → 恐鳌之心
-  { parts: ['vitality', 'claw'],     result: 'bkb' },       // 活力之球+攻击之爪 → 黑皇杖
-  { parts: ['chain', 'chain'],       result: 'blade' },     // 锁子甲×2 → 刃甲
+  // —— 小件 → 基础件/中件 ——
+  { parts: ['gloves', 'gloves'],       result: 'boots' },    // 加速手套×2 → 动力鞋
+  { parts: ['blight', 'blight'],       result: 'claw' },     // 枯萎之石×2 → 攻击之爪
+  { parts: ['band', 'band'],           result: 'vitality' }, // 力量腰带×2 → 活力之球
+  { parts: ['buckler', 'buckler'],     result: 'chain' },    // 小圆盾×2 → 锁子甲
+  { parts: ['bracer', 'bracer'],       result: 'boots' },    // 护腕×2 → 动力鞋
+  { parts: ['bracer', 'blight'],       result: 'claw' },     // 护腕+枯萎之石 → 攻击之爪
+  { parts: ['bracer', 'claw'],         result: 'sange' },    // 护腕+攻击之爪 → 散华
+  { parts: ['ring', 'buckler'],        result: 'vanguard' }, // 治疗指环+小圆盾 → 先锋盾
+  { parts: ['claw', 'gloves'],         result: 'maelstrom' },// 攻击之爪+加速手套 → 漩涡
+  { parts: ['buckler', 'cloak'],       result: 'assault' },  // 小圆盾+闪避斗篷 → 强袭胸甲
+  // —— 基础件/中件 → 大件 ——
+  { parts: ['claw', 'claw'],           result: 'crystalys' },// 攻击之爪×2 → 水晶剑
+  { parts: ['crystalys', 'crystalys'], result: 'daedalus' }, // 水晶剑×2 → 大炮
+  { parts: ['crystalys', 'maelstrom'], result: 'bfury' },    // 水晶剑+漩涡 → 狂战斧
+  { parts: ['maelstrom', 'claw'],      result: 'mkb' },      // 漩涡+攻击之爪 → 金箍棒
+  { parts: ['sange', 'crystalys'],     result: 'satanic' },  // 散华+水晶剑 → 撒旦
+  { parts: ['boots', 'cloak'],         result: 'butterfly' },// 动力鞋+闪避斗篷 → 蝴蝶
+  { parts: ['vanguard', 'vitality'],   result: 'heart' },    // 先锋盾+活力之球 → 恐鳌之心
+  { parts: ['sange', 'vitality'],      result: 'bkb' },      // 散华+活力之球 → 黑皇杖
+  { parts: ['chain', 'chain'],         result: 'blade' },    // 锁子甲×2 → 刃甲
 ];
 // 查找配方：两件装备能合成什么（无序匹配），无配方返回 null
 export function findRecipe(a: string, b: string): string | null {
