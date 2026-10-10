@@ -7,7 +7,7 @@ import {
   waveHpScale, waveAtkScale, waveBountyScale,
   findRecipe,
 } from './config';
-import type { HeroDef, ItemDef } from './config';
+import type { HeroDef, ItemDef, CounterDef } from './config';
 
 export interface Slot { kind: 'item' | 'skill' | 'innate'; key: string }
 export interface Buff { atkMult: number; armorDelta: number; until: number }
@@ -22,6 +22,7 @@ export interface Unit {
   atkTimer: number;
   alive: boolean;
   buff: Buff | null;
+  slotCounters: number[]; // 每个槽位的计数器（装备/技能的成长性词条）
   // 展示用：受击/攻击闪动计数
   hitFlash: number; atkFlash: number;
 }
@@ -31,7 +32,7 @@ export interface AtkFx { id: number; fromSide: 'hero' | 'mob'; fromIdx: number; 
 // 弹道中效果：发射后按格子距离/弹道速度延迟命中结算（确定性）
 export type PendingHit =
   | { kind: 'dmg'; tick: number; srcSide: 'hero' | 'mob'; srcIdx: number; dstSide: 'hero' | 'mob'; dstIdx: number; raw: number; dodgeable: boolean; crit: boolean; lifesteal: number; cleave: number }
-  | { kind: 'skilldmg'; tick: number; srcIdx: number; dstIdx: number; raw: number; armorDelta?: number; debuffTicks?: number }
+  | { kind: 'skilldmg'; tick: number; srcIdx: number; srcSlot?: number; dstIdx: number; raw: number; armorDelta?: number; debuffTicks?: number }
   | { kind: 'heal'; tick: number; srcIdx: number; dstIdx: number; amount: number };
 // 弹道飞行：时长 = 逻辑格子距离 / 弹道速度。格子等大，用格子坐标算欧氏距离
 // 各弹道速度（格子单位/tick）：技能弹道慢一些
@@ -88,6 +89,14 @@ export type Action =
 const itemDef = (k: string) => ITEMS.find(i => i.key === k)!;
 const skillDef = (k: string) => SKILLS.find(s => s.key === k)!;
 
+// 槽位上物品/技能的计数器词条定义（固有技能没有）
+export const slotCounterDef = (sl: Slot | null | undefined) => {
+  if (!sl || sl.kind === 'innate') return undefined;
+  return sl.kind === 'item' ? itemDef(sl.key).counter : skillDef(sl.key).counter;
+};
+// 计数器当前生效的数值（perN 次触发才 +per）
+export const counterValue = (def: CounterDef, count: number) => Math.floor(count / (def.perN ?? 1)) * def.per;
+
 // 固有技能表：key → 名称/图标/描述/折现价
 export interface InnateDef { key: string; name: string; icon: string; desc: string; sellPrice: number }
 export const INNATES: Record<string, InnateDef> = {
@@ -112,7 +121,7 @@ function mkHero(def: HeroDef): Unit {
     side: 'hero', key: def.key, name: def.name, icon: def.icon, desc: def.desc, innate: def.innate,
     baseHp: def.hp, hp: def.hp, atk: def.atk, armor: def.armor, atkInterval: def.atkInterval,
     bounty: 0, slots: Array(MAX_SLOTS).fill(null), cds: {}, atkTimer: def.atkInterval,
-    alive: true, buff: null, hitFlash: 0, atkFlash: 0,
+    alive: true, buff: null, slotCounters: Array(MAX_SLOTS).fill(0), hitFlash: 0, atkFlash: 0,
   };
 }
 function mkMob(def: { key: string; name: string; icon: string; }, w: number, rng: Rng): Unit {
@@ -123,7 +132,7 @@ function mkMob(def: { key: string; name: string; icon: string; }, w: number, rng
     side: 'mob', key: base.key, name: base.name, icon: base.icon, desc: '', innate: '',
     baseHp: hp, hp, atk: Math.round(base.atk * waveAtkScale(w)), armor: base.armor + Math.floor(w / 4),
     atkInterval: base.atkInterval, bounty: Math.round(base.bounty * waveBountyScale(w)),
-    slots: [], cds: {}, atkTimer: rng.i(4, base.atkInterval), alive: true, buff: null, hitFlash: 0, atkFlash: 0,
+    slots: [], cds: {}, atkTimer: rng.i(4, base.atkInterval), alive: true, buff: null, slotCounters: [], hitFlash: 0, atkFlash: 0,
   };
 }
 
@@ -192,8 +201,17 @@ function addFx(state: State, fromSide: 'hero' | 'mob', fromIdx: number, toSide: 
 interface Stats { atk: number; armor: number; ias: number; crit: number; critMul: number; dodge: number; lifesteal: number; regen: number; cleave: number; thorns: number; maxHp: number }
 export function heroStats(u: Unit): Stats {
   const s: Stats = { atk: u.atk, armor: u.armor, ias: 0, crit: 5, critMul: 200, dodge: 0, lifesteal: 0, regen: 0, cleave: 0, thorns: 0, maxHp: u.baseHp };
-  for (const sl of u.slots) {
+  for (let si = 0; si < u.slots.length; si++) {
+    const sl = u.slots[si];
     if (!sl) continue;
+    // 计数器加成（atk/maxHp/armor 类）
+    const cd = slotCounterDef(sl);
+    if (cd) {
+      const v = counterValue(cd, u.slotCounters[si] ?? 0);
+      if (cd.stat === 'atk') s.atk += v;
+      else if (cd.stat === 'maxHp') s.maxHp += v;
+      else if (cd.stat === 'armor') s.armor += v;
+    }
     if (sl.kind === 'item') {
       const d: ItemDef = itemDef(sl.key);
       s.atk += d.atk ?? 0; s.armor += d.armor ?? 0; s.ias += d.ias ?? 0;
@@ -245,25 +263,39 @@ function dealDamage(state: State, src: Unit | null, dst: Unit, dstIdx: number, r
   dst.hp -= dmg;
   dst.hitFlash = 2;
   addFloat(state, dst, dst.side, dstIdx, `-${dmg}`, opts.cls ?? 'dmg');
+  // 受击计数（刃甲硬皮等）
+  if (dst.side === 'hero') {
+    for (let si = 0; si < dst.slots.length; si++) {
+      const cd = slotCounterDef(dst.slots[si]);
+      if (cd?.trigger === 'hitTaken') dst.slotCounters[si] = (dst.slotCounters[si] ?? 0) + 1;
+    }
+  }
   // 刃甲反弹
   if (ss && ss.thorns > 0 && src && src.alive) {
     const ref = Math.round(dmg * ss.thorns / 100);
     src.hp -= ref;
-    if (src.hp <= 0) killUnit(state, src);
+    if (src.hp <= 0) killUnit(state, src, dst);
   }
   // 斧王反击螺旋
   if (dst.slots.some(sl => sl?.kind === 'innate' && sl.key === 'helix') && dst.alive && state.rng.p(0.2)) {
     const hs = heroStats(dst);
     const hd = Math.round(hs.atk * 0.8);
     addFloat(state, dst, 'hero', dstIdx, '🌀反击', 'skill');
-    state.mobs.forEach((m) => { if (m.alive) { m.hp -= hd; m.hitFlash = 2; if (m.hp <= 0) killUnit(state, m); } });
+    state.mobs.forEach((m) => { if (m.alive) { m.hp -= hd; m.hitFlash = 2; if (m.hp <= 0) killUnit(state, m, dst); } });
   }
-  if (dst.hp <= 0) killUnit(state, dst);
+  if (dst.hp <= 0) killUnit(state, dst, src);
   return dmg;
 }
 
-function killUnit(state: State, u: Unit) {
+function killUnit(state: State, u: Unit, src?: Unit | null) {
   if (!u.alive) return;
+  // 击杀计数（攻击之爪嗜血等）
+  if (src?.side === 'hero' && src.alive) {
+    for (let si = 0; si < src.slots.length; si++) {
+      const cd = slotCounterDef(src.slots[si]);
+      if (cd?.trigger === 'kill') src.slotCounters[si] = (src.slotCounters[si] ?? 0) + 1;
+    }
+  }
   u.alive = false; u.hp = 0;
   if (u.side === 'mob') {
     state.kills++;
@@ -309,7 +341,7 @@ function castSkill(state: State, u: Unit, ui: number, key: string, slot: number)
       if (!mobsAlive.length) return false;
       const dmg = 150 + s.atk;
       addFloat(state, u, 'hero', ui, '🌪️剑刃风暴', 'skill');
-      state.mobs.forEach((m, mi) => { if (m.alive) { const fly = addFx(state, 'hero', ui, 'mob', mi, 'skill', slot); state.pending.push({ kind: 'skilldmg', tick: state.tick + fly, srcIdx: ui, dstIdx: mi, raw: dmg }); } });
+      state.mobs.forEach((m, mi) => { if (m.alive) { const fly = addFx(state, 'hero', ui, 'mob', mi, 'skill', slot); state.pending.push({ kind: 'skilldmg', tick: state.tick + fly, srcIdx: ui, srcSlot: slot, dstIdx: mi, raw: dmg }); } });
       return true;
     }
     case 'heal': {
@@ -321,15 +353,21 @@ function castSkill(state: State, u: Unit, ui: number, key: string, slot: number)
       });
       if (worst < 0 || ratio > 0.95) return false;
       addFloat(state, u, 'hero', ui, '💚治疗波', 'skill');
+      // 愈战愈勇：本波每次施放治疗量成长
+      const hcd = slotCounterDef(u.slots[slot]);
+      const amount = 250 + (hcd?.stat === 'heal' ? counterValue(hcd, u.slotCounters[slot] ?? 0) : 0);
       const fly = addFx(state, 'hero', ui, 'hero', worst, 'heal', slot);
-      state.pending.push({ kind: 'heal', tick: state.tick + fly, srcIdx: ui, dstIdx: worst, amount: 250 });
+      state.pending.push({ kind: 'heal', tick: state.tick + fly, srcIdx: ui, dstIdx: worst, amount });
       return true;
     }
     case 'finger': {
       if (firstMob < 0) return false;
       addFloat(state, u, 'hero', ui, '⚡神灭斩', 'skill');
+      // 死亡之指：每次用神灭斩击杀，伤害永久成长
+      const fcd = slotCounterDef(u.slots[slot]);
+      const raw = 500 + (fcd?.stat === 'skilldmg' ? counterValue(fcd, u.slotCounters[slot] ?? 0) : 0);
       const fly = addFx(state, 'hero', ui, 'mob', firstMob, 'finger', slot);
-      state.pending.push({ kind: 'skilldmg', tick: state.tick + fly, srcIdx: ui, dstIdx: firstMob, raw: 500 });
+      state.pending.push({ kind: 'skilldmg', tick: state.tick + fly, srcIdx: ui, srcSlot: slot, dstIdx: firstMob, raw });
       return true;
     }
     case 'warcry': {
@@ -343,7 +381,7 @@ function castSkill(state: State, u: Unit, ui: number, key: string, slot: number)
       state.mobs.forEach((m, mi) => {
         if (!m.alive) return;
         const fly = addFx(state, 'hero', ui, 'mob', mi, 'nova', slot);
-        state.pending.push({ kind: 'skilldmg', tick: state.tick + fly, srcIdx: ui, dstIdx: mi, raw: 120, armorDelta: -3, debuffTicks: 40 });
+        state.pending.push({ kind: 'skilldmg', tick: state.tick + fly, srcIdx: ui, srcSlot: slot, dstIdx: mi, raw: 120, armorDelta: -3, debuffTicks: 40 });
       });
       return true;
     }
@@ -369,6 +407,9 @@ function heroTick(state: State, u: Unit, ui: number) {
     if ((u.cds[sl.key] ?? 0) > 0) continue;
     if (castSkill(state, u, ui, sl.key, si)) {
       u.cds[sl.key] = Math.max(1, Math.round(d.cd * cdMult(state, u)));
+      // 施放计数（治疗波愈战愈勇等）
+      const cd2 = slotCounterDef(sl);
+      if (cd2?.trigger === 'cast') u.slotCounters[si] = (u.slotCounters[si] ?? 0) + 1;
     }
   }
   // 普攻
@@ -415,8 +456,17 @@ function resolvePending(state: State) {
     if (p.kind === 'skilldmg') {
       const t = state.mobs[p.dstIdx];
       if (!t?.alive) continue;
-      dealDamage(state, null, t, p.dstIdx, p.raw, { cls: 'skilldmg' });
+      const caster = state.heroes[p.srcIdx];
+      dealDamage(state, caster?.alive ? caster : null, t, p.dstIdx, p.raw, { cls: 'skilldmg' });
       if (t.alive && p.armorDelta) t.buff = { atkMult: 0, armorDelta: p.armorDelta, until: state.tick + (p.debuffTicks ?? 40) };
+      // 技能击杀计数（神灭斩死亡之指）
+      if (!t.alive && p.srcSlot != null && caster) {
+        const cd = slotCounterDef(caster.slots[p.srcSlot]);
+        if (cd?.trigger === 'skillkill') {
+          caster.slotCounters[p.srcSlot] = (caster.slotCounters[p.srcSlot] ?? 0) + 1;
+          addFloat(state, caster, 'hero', p.srcIdx, `⚡+${cd.per}伤害`, 'skill');
+        }
+      }
       continue;
     }
     // 普攻弹道
@@ -425,6 +475,13 @@ function resolvePending(state: State) {
     if (!dst?.alive) continue; // 目标已死，落空
     const dealt = dealDamage(state, src?.alive ? src : null, dst, p.dstIdx, p.raw, { dodgeable: p.dodgeable, cls: p.crit ? 'crit' : 'dmg' });
     if (dealt > 0 && src?.alive && p.srcSide === 'hero') {
+      // 暴击计数（水晶剑磨刀等）
+      if (p.crit) {
+        for (let si = 0; si < src.slots.length; si++) {
+          const cd = slotCounterDef(src.slots[si]);
+          if (cd?.trigger === 'crit') src.slotCounters[si] = (src.slotCounters[si] ?? 0) + 1;
+        }
+      }
       if (p.lifesteal > 0) {
         const s2 = heroStats(src);
         src.hp = Math.min(s2.maxHp, src.hp + Math.round(dealt * p.lifesteal / 100));
@@ -432,7 +489,7 @@ function resolvePending(state: State) {
       if (p.cleave > 0) {
         const cd = Math.round(dealt * p.cleave / 100);
         state.mobs.forEach((m, mi) => {
-          if (mi !== p.dstIdx && m.alive) { m.hp -= cd; m.hitFlash = 2; if (m.hp <= 0) killUnit(state, m); }
+          if (mi !== p.dstIdx && m.alive) { m.hp -= cd; m.hitFlash = 2; if (m.hp <= 0) killUnit(state, m, src); }
         });
       }
     }
@@ -456,6 +513,17 @@ function battleTick(state: State) {
     const bonus = 100 + state.wave * 40;
     state.gold += bonus;
     addLog(state, `🏆 第 ${state.wave} 波通关！奖励 ${bonus} 金币`);
+    // 通关成长计数（活力之球等）：必须在复活之前统计，只算存活通关的英雄
+    state.heroes.forEach((h, hi) => {
+      if (!h.alive) return;
+      for (let si = 0; si < h.slots.length; si++) {
+        const cd = slotCounterDef(h.slots[si]);
+        if (cd?.trigger === 'waveEnd') {
+          h.slotCounters[si] = (h.slotCounters[si] ?? 0) + 1;
+          addFloat(state, h, 'hero', hi, `🌱成长+${cd.per}`, 'heal');
+        }
+      }
+    });
     // 战后小幅恢复
     state.heroes.forEach((h, i) => { if (h.alive) heal(state, h, i, Math.round(heroStats(h).maxHp * 0.3)); else { h.alive = true; h.hp = Math.round(heroStats(h).maxHp * 0.5); addFloat(state, h, 'hero', i, '复活', 'heal'); } });
     state.wave++;
@@ -506,7 +574,11 @@ export function step(state: State, a: Action) {
       if (state.phase !== 'shop') break;
       state.phase = 'battle';
       spawnWave(state);
-      state.heroes.forEach(h => { h.cds = {}; h.atkTimer = h.atkInterval; });
+      state.heroes.forEach(h => {
+        h.cds = {}; h.atkTimer = h.atkInterval;
+        // 每波复位的计数器清零（永久累积的保留）
+        h.slotCounters = h.slotCounters.map((c, si) => slotCounterDef(h.slots[si])?.mode === 'wave' ? 0 : c);
+      });
       addLog(state, `⚔️ 第 ${state.wave} 波来袭：${state.mobs.map(m => m.name).join('、')}`);
       break;
     }
@@ -536,6 +608,10 @@ export function step(state: State, a: Action) {
       if (dst?.kind === 'innate' && a.fromHero !== a.toHero) break;
       fh.slots[a.fromSlot] = dst;
       th.slots[a.toSlot] = src;
+      // 计数器跟随物品走
+      const tc = fh.slotCounters[a.fromSlot] ?? 0;
+      fh.slotCounters[a.fromSlot] = th.slotCounters[a.toSlot] ?? 0;
+      th.slotCounters[a.toSlot] = tc;
       const d = slotName(src);
       addLog(state, dst
         ? `🔀 ${d.name} ↔ ${slotName(dst).name}（${fh.name} → ${th.name}）`
@@ -559,6 +635,9 @@ export function step(state: State, a: Action) {
       const rd = itemDef(result);
       fh.slots[a.fromSlot] = null;
       th.slots[a.toSlot] = { kind: 'item', key: result };
+      // 合成后成品是新物品，两个材料的计数都清零
+      fh.slotCounters[a.fromSlot] = 0;
+      th.slotCounters[a.toSlot] = 0;
       addLog(state, `🔨 合成 ${rd.icon}${rd.name}！（${itemDef(src.key).name} + ${itemDef(dst.key).name} → ${th.name}）`);
       // 成品可能加血上限，无需截断；但若是同英雄两格互换后的上限变化兜底
       for (const h of [fh, th]) {
