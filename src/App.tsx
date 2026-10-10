@@ -203,6 +203,7 @@ export default function Game() {
   const speedRef = useRef(speed);
   speedRef.current = speed;
   const [showSettings, setShowSettings] = useState(false);
+  const [showModal, setShowModal] = useState(false); // 详细介绍弹窗（点简介栏弹出）
 
   const dispatch = (a: Action) => { step(state, a); setV(v => v + 1); };
 
@@ -241,10 +242,10 @@ export default function Game() {
     draggingRef.current = null;
     if (d?.kind === 'hero' && d.heroIdx === heroIdx) return; // 拖完落在自己头上，不弹详情
     if (selShop !== null) return;
-    setDetail({ kind: 'hero', heroIdx });
+    setDetail({ kind: 'hero', heroIdx }); setShowModal(false);
   };
 
-  const clickMob = (mobIdx: number) => setDetail({ kind: 'mob', mobIdx });
+  const clickMob = (mobIdx: number) => { setDetail({ kind: 'mob', mobIdx }); setShowModal(false); };
 
   const clickSlot = (heroIdx: number, slot: number) => {
     const d = draggingRef.current;
@@ -256,8 +257,8 @@ export default function Game() {
       return;
     }
     // 战斗中也能点开查看详情（售出按钮仅在商店阶段显示）；点空格或空地关闭
-    if (state.heroes[heroIdx].slots[slot]) setDetail({ kind: 'slot', heroIdx, slot });
-    else setDetail(null);
+    if (state.heroes[heroIdx].slots[slot]) { setDetail({ kind: 'slot', heroIdx, slot }); setShowModal(false); }
+    else { setDetail(null); setShowModal(false); }
   };
 
   // 指针拖拽：按下记录起点，移动超阈值进入拖动，松开落在目标格则移动/交换
@@ -351,67 +352,54 @@ export default function Game() {
         <span className="text-xs sm:text-sm">波次 <b className="text-red-400">{state.wave}</b></span>
         <span className="text-xs sm:text-sm">💰 <b className="text-amber-300 tabular-nums">{state.gold}</b></span>
         <span className="text-xs sm:text-sm text-zinc-400">击杀 {state.kills}</span>
-        {/* 物品详情栏：常驻占位一整行，弹出时不改变排版；描述完整显示两行 */}
+        {/* 简介栏：常驻占位一整行；点击弹出详细介绍弹窗 */}
         {detailData && detail ? (
           detail.kind === 'slot' && 'sl' in detailData && detailData.sl ? (
-          <div className={`basis-full order-last flex items-center gap-2 px-3 py-2 rounded border text-xs sm:text-sm min-h-[64px] w-full
+          <button onClick={() => setShowModal(true)} title="点击查看详细介绍"
+            className={`basis-full order-last flex items-center gap-2 px-3 py-2 rounded border text-xs sm:text-sm min-h-[48px] w-full text-left cursor-pointer hover:brightness-125 transition-all
             ${detailData.sl.kind === 'item' ? 'bg-amber-900/70 border-amber-500' : detailData.sl.kind === 'skill' ? 'bg-violet-900/70 border-violet-500' : 'bg-cyan-900/70 border-cyan-500'}`}>
             <span className="text-xl sm:text-2xl shrink-0">{detailData.d.icon}</span>
             <div className="flex-1 min-w-0 leading-snug">
-              <div className="font-bold whitespace-nowrap">{detailData.d.name}
+              <div className="font-bold whitespace-nowrap truncate">{detailData.d.name}
                 <span className="font-normal text-zinc-400 text-[10px] sm:text-xs">（{detailData.sl.kind === 'item' ? '装备' : detailData.sl.kind === 'skill' ? '技能' : '固有技能'} · {detailData.h.icon}{detailData.h.name}）</span>
               </div>
-              <div className="text-[10px] sm:text-xs text-zinc-200/90 line-clamp-2">{detailData.d.desc}
+              <div className="text-[10px] sm:text-xs text-zinc-200/90 truncate">{detailData.d.desc}
                 {(() => {
                   const cd = slotCounterDef(detailData.sl);
                   if (!cd) return null;
                   const n = detailData.h.slotCounters[detail.slot] ?? 0;
                   const v = counterValue(cd, n);
-                  const statName = { atk: '攻', maxHp: '生命', armor: '甲', skilldmg: '技能伤害', heal: '治疗量' }[cd.stat];
-                  return <span className={cd.mode === 'all' ? 'text-lime-300/90' : 'text-orange-300/90'}>　📈 {cd.label}（当前 ×{n}，+{v}{statName}{cd.mode === 'wave' ? '，每波复位' : '，永久累积'}）</span>;
-                })()}
-                {detailData.sl.kind === 'item' && (() => {
-                  const k = detailData.sl.key;
-                  const asPart = RECIPES.filter(r => r.parts.includes(k));
-                  const nm = (key: string) => ITEMS.find(i => i.key === key)?.name ?? key;
-                  if (!asPart.length) return null;
-                  return <span className="text-amber-300/90">　🔨 {asPart.map(r => `${nm(r.parts[0])}+${nm(r.parts[1])}→${nm(r.result)}`).join('；')}</span>;
+                  return <span className={cd.mode === 'all' ? 'text-lime-300/90' : 'text-orange-300/90'}>　📈×{n} +{v}</span>;
                 })()}
               </div>
             </div>
-            {state.phase === 'shop' && (
-              <button
-                title="售出"
-                onClick={() => { dispatch({ type: 'unequip', heroIdx: detail.heroIdx, slot: detail.slot }); setDetail(null); }}
-                className="px-3 py-1.5 rounded border-2 border-red-500 text-red-400 hover:bg-red-950 text-sm font-bold tabular-nums whitespace-nowrap min-h-[36px] shrink-0">
-                {slotSellPrice(detailData.sl)}💰
-              </button>
-            )}
-          </div>
+            <span className="text-zinc-400 text-xs shrink-0">详情 ➤</span>
+          </button>
           ) : 'u' in detailData && detailData.u ? (() => {
             const u = detailData.u;
             const isMob = detail.kind === 'mob';
             const s = isMob ? null : heroStats(u);
             return (
-              <div className={`basis-full order-last flex items-center gap-2 px-3 py-2 rounded border text-xs sm:text-sm min-h-[64px] w-full
+              <button onClick={() => setShowModal(true)} title="点击查看详细介绍"
+                className={`basis-full order-last flex items-center gap-2 px-3 py-2 rounded border text-xs sm:text-sm min-h-[48px] w-full text-left cursor-pointer hover:brightness-125 transition-all
                 ${isMob ? 'bg-red-950/70 border-red-600' : 'bg-emerald-950/70 border-emerald-600'}`}>
                 <span className="text-xl sm:text-2xl shrink-0">{u.icon}</span>
                 <div className="flex-1 min-w-0 leading-snug">
-                  <div className="font-bold whitespace-nowrap">{u.name}
+                  <div className="font-bold whitespace-nowrap truncate">{u.name}
                     <span className="font-normal text-zinc-400 text-[10px] sm:text-xs">（{isMob ? `怪物 · 赏金${u.bounty}💰` : '英雄'} · 生命 {Math.max(0, Math.ceil(u.hp))}/{isMob ? u.baseHp : s!.maxHp}）</span>
                   </div>
-                  <div className="text-[10px] sm:text-xs text-zinc-200/90 line-clamp-2">
+                  <div className="text-[10px] sm:text-xs text-zinc-200/90 truncate">
                     攻{isMob ? u.atk : s!.atk} 甲{isMob ? Math.max(0, u.armor + (u.buff?.armorDelta ?? 0)) : s!.armor} 攻速{(10 / (isMob ? (u.atkInterval ?? 10) : Math.max(3, Math.round((u.atkInterval ?? 10) / (1 + s!.ias / 100))))).toFixed(1)}/s
-                    {!isMob && (s!.crit > 0 ? ` 暴${s!.crit}%×${(s!.critMul / 100).toFixed(1)}` : '')}{!isMob && s!.dodge > 0 ? ` 闪${s!.dodge}%` : ''}{!isMob && s!.lifesteal > 0 ? ` 吸${s!.lifesteal}%` : ''}{!isMob && s!.cleave > 0 ? ` 分裂${s!.cleave}%` : ''}
                   </div>
                 </div>
-              </div>
+                <span className="text-zinc-400 text-xs shrink-0">详情 ➤</span>
+              </button>
             );
           })() : null
         ) : (
-          <div className="basis-full order-last flex items-center gap-2 px-3 py-2 rounded border border-dashed border-zinc-700 text-xs sm:text-sm min-h-[64px] w-full text-zinc-500">
+          <div className="basis-full order-last flex items-center gap-2 px-3 py-2 rounded border border-dashed border-zinc-700 text-xs sm:text-sm min-h-[48px] w-full text-zinc-500">
             <span className="text-xl sm:text-2xl opacity-40">🔍</span>
-            <span>点击已装备的物品/技能查看详情与售出</span>
+            <span>点击已装备的物品/技能/英雄/怪物查看简介，再点弹出详情</span>
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
@@ -446,6 +434,118 @@ export default function Game() {
               className="w-full mt-2 py-2 rounded bg-zinc-800 border border-zinc-700 text-sm text-zinc-300 min-h-[44px]">
               关闭
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 详细介绍弹窗：点简介栏弹出 */}
+      {showModal && detailData && detail && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowModal(false)}>
+          <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-zinc-700 p-4 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {detail.kind === 'slot' && 'sl' in detailData && detailData.sl ? (() => {
+              const { sl, d, h } = detailData as { sl: Slot; d: ReturnType<typeof defOf>; h: Unit };
+              const cd = slotCounterDef(sl);
+              const n = h.slotCounters[detail.slot] ?? 0;
+              const v = cd ? counterValue(cd, n) : 0;
+              const statName = cd ? { atk: '攻击', maxHp: '生命', armor: '护甲', skilldmg: '技能伤害', heal: '治疗量' }[cd.stat] : '';
+              const asPart = sl.kind === 'item' ? RECIPES.filter(r => r.parts.includes(sl.key)) : [];
+              const it = (key: string) => ITEMS.find(i => i.key === key);
+              return (
+                <>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-4xl">{d.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-base">{d.name}</div>
+                      <div className="text-xs text-zinc-400">{sl.kind === 'item' ? '装备' : sl.kind === 'skill' ? '技能' : '固有技能'} · 装备于 {h.icon}{h.name}</div>
+                    </div>
+                    <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-zinc-300 text-lg px-2">✕</button>
+                  </div>
+                  <div className="text-sm text-zinc-200 leading-relaxed mb-3">{d.desc}</div>
+                  {cd && (
+                    <div className={`rounded-lg border p-2.5 mb-3 text-xs leading-relaxed ${cd.mode === 'all' ? 'border-lime-700 bg-lime-950/40 text-lime-200' : 'border-orange-700 bg-orange-950/40 text-orange-200'}`}>
+                      <div className="font-bold mb-1">📈 {cd.label}</div>
+                      <div>当前累计 ×{n}，生效 <b>+{v} {statName}</b>（{cd.mode === 'wave' ? '每波开始复位' : '永久累积'}{cd.perN ? `，每${cd.perN}次触发+${cd.per}` : ''}）</div>
+                    </div>
+                  )}
+                  {asPart.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs font-bold text-amber-300 mb-1.5">🔨 合成配方</div>
+                      <div className="flex flex-col gap-1.5">
+                        {asPart.map((r, i) => {
+                          const hl = (key: string) => key === sl.key ? 'ring-1 ring-amber-400' : '';
+                          return (
+                            <div key={i} className="flex items-center gap-1.5 text-xs bg-zinc-800/70 rounded-lg px-2 py-1.5">
+                              <span className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 ${hl(r.parts[0])}`} title={it(r.parts[0])?.name}>
+                                <span className="text-base">{it(r.parts[0])?.icon}</span>
+                                <span className="text-zinc-200">{it(r.parts[0])?.name}</span>
+                              </span>
+                              <span className="text-zinc-500">+</span>
+                              <span className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 ${hl(r.parts[1])}`} title={it(r.parts[1])?.name}>
+                                <span className="text-base">{it(r.parts[1])?.icon}</span>
+                                <span className="text-zinc-200">{it(r.parts[1])?.name}</span>
+                              </span>
+                              <span className="text-amber-400 mx-0.5">→</span>
+                              <span className="flex items-center gap-1 rounded px-1 py-0.5 bg-amber-800/60 font-bold" title={it(r.result)?.desc}>
+                                <span className="text-base">{it(r.result)?.icon}</span>
+                                <span className="text-amber-100">{it(r.result)?.name}</span>
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {state.phase === 'shop' && (
+                    <button
+                      onClick={() => { dispatch({ type: 'unequip', heroIdx: detail.heroIdx, slot: detail.slot }); setDetail(null); setShowModal(false); }}
+                      className="w-full py-2 rounded border-2 border-red-500 text-red-400 hover:bg-red-950 text-sm font-bold min-h-[44px]">
+                      售出 +{slotSellPrice(sl)}💰
+                    </button>
+                  )}
+                </>
+              );
+            })() : 'u' in detailData && detailData.u ? (() => {
+              const u = detailData.u;
+              const isMob = detail.kind === 'mob';
+              const s = isMob ? null : heroStats(u);
+              const rows: [string, string][] = isMob ? [
+                ['生命', `${Math.max(0, Math.ceil(u.hp))} / ${u.baseHp}`],
+                ['攻击', `${u.atk}`],
+                ['护甲', `${Math.max(0, u.armor + (u.buff?.armorDelta ?? 0))}${u.buff?.armorDelta ? `（含减益${u.buff.armorDelta}）` : ''}`],
+                ['攻速', `${(10 / u.atkInterval).toFixed(1)} 次/秒`],
+                ['赏金', `${u.bounty}💰`],
+              ] : [
+                ['生命', `${Math.max(0, Math.ceil(u.hp))} / ${s!.maxHp}`],
+                ['攻击', `${s!.atk}`],
+                ['护甲', `${s!.armor}`],
+                ['攻速', `${(10 / Math.max(3, Math.round(u.atkInterval / (1 + s!.ias / 100)))).toFixed(1)} 次/秒`],
+                ['暴击', `${s!.crit}%（×${(s!.critMul / 100).toFixed(1)}）`],
+                ...(s!.dodge > 0 ? [['闪避', `${s!.dodge}%`] as [string, string]] : []),
+                ...(s!.lifesteal > 0 ? [['吸血', `${s!.lifesteal}%`] as [string, string]] : []),
+                ...(s!.cleave > 0 ? [['分裂', `${s!.cleave}%`] as [string, string]] : []),
+                ...(s!.regen > 0 ? [['回复', `${s!.regen}/秒`] as [string, string]] : []),
+                ...(s!.thorns > 0 ? [['反弹', `${s!.thorns}%`] as [string, string]] : []),
+              ];
+              return (
+                <>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-4xl">{u.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-base">{u.name}</div>
+                      <div className="text-xs text-zinc-400">{isMob ? `怪物 · 第 ${state.wave} 波` : '英雄'}{!u.alive && ' · 💀已阵亡'}</div>
+                    </div>
+                    <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-zinc-300 text-lg px-2">✕</button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 mb-3">
+                    {rows.map(([k, val]) => (
+                      <div key={k} className="rounded-lg bg-zinc-800/70 px-2.5 py-1.5 text-xs flex justify-between">
+                        <span className="text-zinc-400">{k}</span><span className="font-bold text-zinc-100">{val}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })() : null}
           </div>
         </div>
       )}
