@@ -254,21 +254,26 @@ export default function Game() {
   const targeting = selShop !== null;
 
   // 详情浮层：查看某个槽位的物品/技能，或英雄/小怪本体
-  type Detail = { kind: 'slot'; heroIdx: number; slot: number } | { kind: 'hero'; heroIdx: number } | { kind: 'mob'; mobIdx: number } | { kind: 'shop'; shopIdx: number };
+  type Detail = { kind: 'slot'; heroIdx: number; slot: number } | { kind: 'hero'; heroIdx: number } | { kind: 'mob'; mobIdx: number } | { kind: 'shop'; shopIdx: number } | { kind: 'codex'; ctype: 'item' | 'skill'; key: string };
   const [detail, setDetail] = useState<Detail | null>(() => {
     const od = (window as unknown as { __openDetail?: { heroIdx: number; slot: number } }).__openDetail;
     return od ? { kind: 'slot', ...od } : null;
   });
+  // 详情跳转栈：配方表里点物品芯片深入查看，可逐级返回
+  const [detailStack, setDetailStack] = useState<Detail[]>([]);
+  const openDetail = (d: Detail | null) => { setDetail(d); setDetailStack([]); };
+  const pushDetail = (d: Detail) => { setDetailStack(s => (detail ? [...s, detail] : s)); setDetail(d); };
+  const popDetail = () => setDetailStack(s => { const n = [...s]; const p = n.pop(); if (p) setDetail(p); return n; });
 
   const clickHeroHeader = (heroIdx: number) => {
     const d = draggingRef.current;
     draggingRef.current = null;
     if (d?.kind === 'hero' && d.heroIdx === heroIdx) return; // 拖完落在自己头上，不弹详情
     if (selShop !== null) return;
-    setDetail({ kind: 'hero', heroIdx }); setShowModal(false);
+    openDetail({ kind: 'hero', heroIdx }); setShowModal(false);
   };
 
-  const clickMob = (mobIdx: number) => { setDetail({ kind: 'mob', mobIdx }); setShowModal(false); };
+  const clickMob = (mobIdx: number) => { openDetail({ kind: 'mob', mobIdx }); setShowModal(false); };
 
   const clickSlot = (heroIdx: number, slot: number) => {
     const d = draggingRef.current;
@@ -280,8 +285,8 @@ export default function Game() {
       return;
     }
     // 战斗中也能点开查看详情（售出按钮仅在商店阶段显示）；点空格或空地关闭
-    if (state.heroes[heroIdx].slots[slot]) { setDetail({ kind: 'slot', heroIdx, slot }); setShowModal(false); }
-    else { setDetail(null); setShowModal(false); }
+    if (state.heroes[heroIdx].slots[slot]) { openDetail({ kind: 'slot', heroIdx, slot }); setShowModal(false); }
+    else { openDetail(null); setShowModal(false); }
   };
 
   // 指针拖拽：按下记录起点，移动超阈值进入拖动，松开落在目标格则移动/交换
@@ -368,9 +373,62 @@ export default function Game() {
       const d = g.kind === 'item' ? ITEMS.find(x => x.key === g.key)! : SKILLS.find(x => x.key === g.key)!;
       return { g, d };
     }
+    if (detail.kind === 'codex') {
+      const d = detail.ctype === 'item' ? ITEMS.find(x => x.key === detail.key) : SKILLS.find(x => x.key === detail.key);
+      return d ? { d } : null;
+    }
     const m = state.mobs[detail.mobIdx];
     return m ? { u: m } : null;
   })() : null;
+
+  // 配方行（可点芯片跳转图鉴详情）：parts → result，高亮 hlKey
+  const RecipeRows = ({ list, hlKey }: { list: typeof RECIPES; hlKey: string }) => (
+    <div className="flex flex-col gap-1.5">
+      {list.map((r, i) => {
+        const chip = (key: string) => {
+          const d = ITEMS.find(x => x.key === key);
+          return (
+            <button key={key} onClick={() => pushDetail({ kind: 'codex', ctype: 'item', key })}
+              title={`${d?.name}：${d?.desc}（点击查看详情）`}
+              className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 hover:bg-amber-800/70 active:scale-95 transition-all cursor-pointer ${key === hlKey ? 'ring-1 ring-amber-400' : ''}`}>
+              <span className="text-base">{d?.icon}</span>
+              <span className="text-zinc-200">{d?.name}</span>
+            </button>
+          );
+        };
+        const rd = ITEMS.find(x => x.key === r.result);
+        return (
+          <div key={i} className="flex items-center gap-1.5 text-xs bg-zinc-800/70 rounded-lg px-2 py-1.5">
+            {chip(r.parts[0])}
+            <span className="text-zinc-500">+</span>
+            {chip(r.parts[1])}
+            <span className="text-amber-400 mx-0.5">→</span>
+            <button onClick={() => pushDetail({ kind: 'codex', ctype: 'item', key: r.result })}
+              title={`${rd?.name}：${rd?.desc}（点击查看详情）`}
+              className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-800/60 font-bold hover:bg-amber-700/70 active:scale-95 transition-all cursor-pointer ${r.result === hlKey ? 'ring-1 ring-amber-400' : ''}`}>
+              <span className="text-base">{rd?.icon}</span>
+              <span className="text-amber-100">{rd?.name}</span>
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // 详情弹窗顶栏：图标+名称+副标题+返回/关闭
+  const ModalHeader = ({ icon, name, sub }: { icon: string; name: string; sub: string }) => (
+    <div className="flex items-center gap-3 mb-3">
+      {detailStack.length > 0 && (
+        <button onClick={popDetail} className="text-sky-400 hover:text-sky-300 text-sm px-1 shrink-0" title="返回上一个详情">← 返回</button>
+      )}
+      <span className="text-4xl">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="font-bold text-base">{name}</div>
+        <div className="text-xs text-zinc-400">{sub}</div>
+      </div>
+      <button onClick={() => { setShowModal(false); setDetailStack([]); }} className="text-zinc-500 hover:text-zinc-300 text-lg px-2">✕</button>
+    </div>
+  );
 
 
   return (
@@ -487,24 +545,47 @@ export default function Game() {
       {showModal && detailData && detail && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowModal(false)}>
           <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-zinc-700 p-4 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            {detail.kind === 'shop' && 'g' in detailData ? (() => {
+            {detail.kind === 'codex' && 'd' in detailData ? (() => {
+              const d = detailData.d as ItemDef | SkillDef;
+              const itD = detail.ctype === 'item' ? (d as ItemDef) : null;
+              const skD = detail.ctype === 'skill' ? (d as SkillDef) : null;
+              const cd = itD?.counter ?? skD?.counter;
+              const asPart = detail.ctype === 'item' ? RECIPES.filter(r => r.parts.includes(detail.key)) : [];
+              const asResult = detail.ctype === 'item' ? RECIPES.filter(r => r.result === detail.key) : [];
+              return (
+                <>
+                  <ModalHeader icon={d.icon} name={d.name} sub={`图鉴 · ${detail.ctype === 'item' ? '装备' : '技能'} · 💰${d.price}`} />
+                  <div className="text-sm text-zinc-200 leading-relaxed mb-3">{d.desc}</div>
+                  {cd && (
+                    <div className={`rounded-lg border p-2.5 mb-3 text-xs leading-relaxed ${cd.mode === 'all' ? 'border-lime-700 bg-lime-950/40 text-lime-200' : 'border-orange-700 bg-orange-950/40 text-orange-200'}`}>
+                      <div className="font-bold mb-1">📈 {cd.label}</div>
+                      <div>{cd.mode === 'wave' ? '每波开始复位' : '永久累积'}{cd.perN ? `，每${cd.perN}次触发+${cd.per}` : ''}</div>
+                    </div>
+                  )}
+                  {asResult.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs font-bold text-amber-300 mb-1.5">🔨 合成自</div>
+                      <RecipeRows list={asResult} hlKey={detail.key} />
+                    </div>
+                  )}
+                  {asPart.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs font-bold text-amber-300 mb-1.5">🔨 可合成</div>
+                      <RecipeRows list={asPart} hlKey={detail.key} />
+                    </div>
+                  )}
+                </>
+              );
+            })() : detail.kind === 'shop' && 'g' in detailData ? (() => {
               const { g, d } = detailData as { g: Goods; d: ItemDef | SkillDef };
               const itD = g.kind === 'item' ? (d as ItemDef) : null;
               const skD = g.kind === 'skill' ? (d as SkillDef) : null;
               const cd = itD?.counter ?? skD?.counter;
               const asPart = g.kind === 'item' ? RECIPES.filter(r => r.parts.includes(g.key)) : [];
-              const it = (key: string) => ITEMS.find(i => i.key === key);
               const afford = state.gold >= g.price && !g.sold;
               return (
                 <>
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="text-4xl">{d.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-base">{d.name}</div>
-                      <div className="text-xs text-zinc-400">商店 · {g.kind === 'item' ? '装备' : '技能'} · 💰{g.price}{g.sold ? ' · 已售' : ''}</div>
-                    </div>
-                    <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-zinc-300 text-lg px-2">✕</button>
-                  </div>
+                  <ModalHeader icon={d.icon} name={d.name} sub={`商店 · ${g.kind === 'item' ? '装备' : '技能'} · 💰${g.price}${g.sold ? ' · 已售' : ''}`} />
                   <div className="text-sm text-zinc-200 leading-relaxed mb-3">{d.desc}</div>
                   {cd && (
                     <div className={`rounded-lg border p-2.5 mb-3 text-xs leading-relaxed ${cd.mode === 'all' ? 'border-lime-700 bg-lime-950/40 text-lime-200' : 'border-orange-700 bg-orange-950/40 text-orange-200'}`}>
@@ -515,29 +596,7 @@ export default function Game() {
                   {asPart.length > 0 && (
                     <div className="mb-3">
                       <div className="text-xs font-bold text-amber-300 mb-1.5">🔨 合成配方</div>
-                      <div className="flex flex-col gap-1.5">
-                        {asPart.map((r, i) => {
-                          const hl = (key: string) => key === g.key ? 'ring-1 ring-amber-400' : '';
-                          return (
-                            <div key={i} className="flex items-center gap-1.5 text-xs bg-zinc-800/70 rounded-lg px-2 py-1.5">
-                              <span className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 ${hl(r.parts[0])}`} title={it(r.parts[0])?.name}>
-                                <span className="text-base">{it(r.parts[0])?.icon}</span>
-                                <span className="text-zinc-200">{it(r.parts[0])?.name}</span>
-                              </span>
-                              <span className="text-zinc-500">+</span>
-                              <span className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 ${hl(r.parts[1])}`} title={it(r.parts[1])?.name}>
-                                <span className="text-base">{it(r.parts[1])?.icon}</span>
-                                <span className="text-zinc-200">{it(r.parts[1])?.name}</span>
-                              </span>
-                              <span className="text-amber-400 mx-0.5">→</span>
-                              <span className="flex items-center gap-1 rounded px-1 py-0.5 bg-amber-800/60 font-bold" title={it(r.result)?.desc}>
-                                <span className="text-base">{it(r.result)?.icon}</span>
-                                <span className="text-amber-100">{it(r.result)?.name}</span>
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <RecipeRows list={asPart} hlKey={g.key} />
                     </div>
                   )}
                   {!g.sold && (
@@ -556,17 +615,9 @@ export default function Game() {
               const v = cd ? counterValue(cd, n) : 0;
               const statName = cd ? { atk: '攻击', maxHp: '生命', armor: '护甲', skilldmg: '技能伤害', heal: '治疗量' }[cd.stat] : '';
               const asPart = sl.kind === 'item' ? RECIPES.filter(r => r.parts.includes(sl.key)) : [];
-              const it = (key: string) => ITEMS.find(i => i.key === key);
               return (
                 <>
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="text-4xl">{d.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-base">{d.name}</div>
-                      <div className="text-xs text-zinc-400">{sl.kind === 'item' ? '装备' : sl.kind === 'skill' ? '技能' : '固有技能'} · 装备于 {h.icon}{h.name}</div>
-                    </div>
-                    <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-zinc-300 text-lg px-2">✕</button>
-                  </div>
+                  <ModalHeader icon={d.icon} name={d.name} sub={`${sl.kind === 'item' ? '装备' : sl.kind === 'skill' ? '技能' : '固有技能'} · 装备于 ${h.icon}${h.name}`} />
                   <div className="text-sm text-zinc-200 leading-relaxed mb-3">{d.desc}</div>
                   {cd && (
                     <div className={`rounded-lg border p-2.5 mb-3 text-xs leading-relaxed ${cd.mode === 'all' ? 'border-lime-700 bg-lime-950/40 text-lime-200' : 'border-orange-700 bg-orange-950/40 text-orange-200'}`}>
@@ -577,29 +628,7 @@ export default function Game() {
                   {asPart.length > 0 && (
                     <div className="mb-3">
                       <div className="text-xs font-bold text-amber-300 mb-1.5">🔨 合成配方</div>
-                      <div className="flex flex-col gap-1.5">
-                        {asPart.map((r, i) => {
-                          const hl = (key: string) => key === sl.key ? 'ring-1 ring-amber-400' : '';
-                          return (
-                            <div key={i} className="flex items-center gap-1.5 text-xs bg-zinc-800/70 rounded-lg px-2 py-1.5">
-                              <span className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 ${hl(r.parts[0])}`} title={it(r.parts[0])?.name}>
-                                <span className="text-base">{it(r.parts[0])?.icon}</span>
-                                <span className="text-zinc-200">{it(r.parts[0])?.name}</span>
-                              </span>
-                              <span className="text-zinc-500">+</span>
-                              <span className={`flex items-center gap-1 rounded px-1 py-0.5 bg-amber-900/50 ${hl(r.parts[1])}`} title={it(r.parts[1])?.name}>
-                                <span className="text-base">{it(r.parts[1])?.icon}</span>
-                                <span className="text-zinc-200">{it(r.parts[1])?.name}</span>
-                              </span>
-                              <span className="text-amber-400 mx-0.5">→</span>
-                              <span className="flex items-center gap-1 rounded px-1 py-0.5 bg-amber-800/60 font-bold" title={it(r.result)?.desc}>
-                                <span className="text-base">{it(r.result)?.icon}</span>
-                                <span className="text-amber-100">{it(r.result)?.name}</span>
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <RecipeRows list={asPart} hlKey={sl.key} />
                     </div>
                   )}
                   {state.phase === 'shop' && (
@@ -639,14 +668,7 @@ export default function Game() {
               ];
               return (
                 <>
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="text-4xl">{u.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-base">{u.name}</div>
-                      <div className="text-xs text-zinc-400">{isMob ? `怪物 · 第 ${state.wave} 波` : '英雄'}{!u.alive && ' · 💀已阵亡'}</div>
-                    </div>
-                    <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-zinc-300 text-lg px-2">✕</button>
-                  </div>
+                  <ModalHeader icon={u.icon} name={u.name} sub={`${isMob ? `怪物 · 第 ${state.wave} 波` : '英雄'}${!u.alive ? ' · 💀已阵亡' : ''}`} />
                   <div className="grid grid-cols-2 gap-1.5 mb-3">
                     {rows.map(([k, val]) => (
                       <div key={k} className="rounded-lg bg-zinc-800/70 px-2.5 py-1.5 text-xs flex justify-between">
@@ -752,7 +774,7 @@ export default function Game() {
                 const afford = state.gold >= g.price;
                 return (
                   <button key={i} disabled={g.sold}
-                    onClick={() => { setDetail({ kind: 'shop', shopIdx: i }); setShowModal(false); dragRef.current = null; setGhost(null); }}
+                    onClick={() => { openDetail({ kind: 'shop', shopIdx: i }); setShowModal(false); dragRef.current = null; setGhost(null); }}
                     onDoubleClick={() => { if (!g.sold && afford) { setSelShop(selShop === i ? null : i); setShowModal(false); } }}
                     className={`rounded-lg border p-1.5 text-left h-20 sm:h-24 overflow-hidden transition-all active:scale-95
                       ${g.sold ? 'opacity-30' : afford ? 'border-amber-700/50 bg-zinc-800/80 active:bg-zinc-700' : 'border-zinc-800 bg-zinc-900 opacity-50'}
