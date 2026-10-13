@@ -226,7 +226,8 @@ export default function Game() {
   const speedRef = useRef(speed);
   speedRef.current = speed;
   const [showSettings, setShowSettings] = useState(false);
-  const [showTree, setShowTree] = useState(false); // 合成树图表
+  const [showTree, setShowTree] = useState(false); // 装备图鉴（合成树全屏页）
+  const [treeSel, setTreeSel] = useState<string | null>(null); // 图鉴中选中的装备
   const [showModal, setShowModal] = useState(false); // 详细介绍弹窗（点简介栏弹出）
 
   const dispatch = (a: Action) => { step(state, a); setV(v => v + 1); };
@@ -509,7 +510,7 @@ export default function Game() {
         <div className="ml-auto flex items-center gap-2">
           <button onClick={() => setShowTree(true)}
             aria-label="合成树"
-            title="合成树图表"
+            title="装备图鉴·合成树"
             className="px-2 py-1.5 rounded bg-zinc-800 border border-zinc-700 text-xs min-h-[36px]">🌳</button>
           <button onClick={() => setShowSettings(true)}
             aria-label="设置"
@@ -517,7 +518,7 @@ export default function Game() {
         </div>
       </header>
 
-      {/* 合成树图表：所有装备按合成层级排成 DAG，点节点看图鉴详情 */}
+      {/* 装备图鉴：合成树全屏页，点节点高亮相邻合成线并显示简介 */}
       {showTree && (() => {
         const inTree = new Set<string>();
         RECIPES.forEach(r => { inTree.add(r.parts[0]); inTree.add(r.parts[1]); inTree.add(r.result); });
@@ -539,41 +540,86 @@ export default function Game() {
           else { edges.push({ a: p0, b: r.result, dup: false }); edges.push({ a: p1, b: r.result, dup: false }); }
         });
         const it = (key: string) => ITEMS.find(i => i.key === key);
+        const selD = treeSel ? it(treeSel) : null;
         return (
-          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-2 sm:p-4" onClick={() => setShowTree(false)}>
-            <div className="w-full max-w-4xl max-h-[90vh] rounded-xl bg-zinc-900 border border-zinc-700 shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
-                <span className="font-bold text-sm">🌳 装备合成树</span>
-                <span className="text-xs text-zinc-400">从左到右逐级合成，点装备看图鉴详情</span>
-                <button onClick={() => setShowTree(false)} className="ml-auto text-zinc-500 hover:text-zinc-300 text-lg px-2">✕</button>
-              </div>
-              <div className="overflow-auto flex-1 p-3">
-                <div className="relative" style={{ width: W, height: H }}>
-                  <svg className="absolute inset-0 pointer-events-none" width={W} height={H}>
-                    {edges.map((e, i) => {
-                      const a = pos[e.a], b = pos[e.b];
-                      const x1 = a.x + NW, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y + NH / 2;
-                      const mx = (x1 + x2) / 2;
-                      return <path key={i} d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
-                        stroke={e.dup ? '#f59e0b' : '#52525b'} strokeWidth={e.dup ? 2.5 : 1.5} fill="none" opacity={0.9} />;
-                    })}
-                  </svg>
-                  {Object.entries(pos).map(([k, p]) => {
-                    const d = it(k)!;
-                    return (
-                      <button key={k}
-                        onClick={() => { setShowTree(false); openDetail({ kind: 'codex', ctype: 'item', key: k }); setShowModal(true); }}
-                        title={`${d.name}：${d.desc}`}
-                        className="absolute rounded-lg border border-amber-700/60 bg-amber-950/60 hover:bg-amber-900/70 active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer"
-                        style={{ left: p.x, top: p.y, width: NW, height: NH }}>
-                        <span className="text-xl leading-none">{d.icon}</span>
-                        <span className="text-[10px] font-bold text-amber-100 leading-none">{d.name}</span>
-                        <span className="text-[9px] text-zinc-400 leading-none">💰{d.price}</span>
-                      </button>
-                    );
+          <div className="fixed inset-0 z-40 bg-zinc-950 flex flex-col">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
+              <span className="font-bold text-sm">🌳 装备图鉴 · 合成树</span>
+              <span className="text-xs text-zinc-400 hidden sm:inline">点装备高亮合成线并看简介，再点一次跳转详情</span>
+              <button onClick={() => { setShowTree(false); setTreeSel(null); }} className="ml-auto px-3 py-1.5 rounded bg-zinc-800 border border-zinc-700 text-sm min-h-[36px]">✕ 关闭</button>
+            </div>
+            <div className="overflow-auto flex-1 p-3">
+              <div className="relative" style={{ width: W, height: H }}>
+                <svg className="absolute inset-0 pointer-events-none" width={W} height={H}>
+                  {edges.map((e, i) => {
+                    const a = pos[e.a], b = pos[e.b];
+                    const x1 = a.x + NW, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y + NH / 2;
+                    const mx = (x1 + x2) / 2;
+                    const lit = treeSel !== null && (e.a === treeSel || e.b === treeSel);
+                    return <path key={i} d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
+                      stroke={lit ? '#fbbf24' : e.dup ? '#f59e0b' : '#52525b'}
+                      strokeWidth={lit ? 3.5 : e.dup ? 2.5 : 1.5}
+                      fill="none"
+                      opacity={treeSel === null ? 0.9 : lit ? 1 : 0.15} />;
                   })}
-                </div>
+                </svg>
+                {Object.entries(pos).map(([k, p]) => {
+                  const d = it(k)!;
+                  const sel = treeSel === k;
+                  const dim = treeSel !== null && !sel && !edges.some(e => (e.a === treeSel && e.b === k) || (e.b === treeSel && e.a === k));
+                  return (
+                    <button key={k}
+                      onClick={() => {
+                        if (sel) { setShowTree(false); setTreeSel(null); openDetail({ kind: 'codex', ctype: 'item', key: k }); setShowModal(true); }
+                        else setTreeSel(k);
+                      }}
+                      title={`${d.name}：${d.desc}`}
+                      className={`absolute rounded-lg border transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer active:scale-95
+                        ${sel ? 'border-amber-400 bg-amber-900/80 ring-2 ring-amber-400 scale-105 z-10' : 'border-amber-700/60 bg-amber-950/60 hover:bg-amber-900/70'}
+                        ${dim ? 'opacity-35' : ''}`}
+                      style={{ left: p.x, top: p.y, width: NW, height: NH }}>
+                      <span className="text-xl leading-none">{d.icon}</span>
+                      <span className="text-[10px] font-bold text-amber-100 leading-none">{d.name}</span>
+                      <span className="text-[9px] text-zinc-400 leading-none">💰{d.price}</span>
+                    </button>
+                  );
+                })}
               </div>
+            </div>
+            {/* 底部简介栏：选中装备的简介与合成关系 */}
+            <div className="shrink-0 border-t border-zinc-800 bg-zinc-900/90 px-4 py-3 min-h-[76px]">
+              {selD && treeSel ? (
+                <div className="flex items-start gap-3 max-w-3xl">
+                  <span className="text-3xl shrink-0">{selD.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm">{selD.name}
+                      <span className="font-normal text-zinc-400 text-xs">　💰{selD.price}</span>
+                    </div>
+                    <div className="text-xs text-zinc-300 leading-relaxed mt-0.5">{selD.desc}</div>
+                    {(() => {
+                      const from = RECIPES.filter(r => r.result === treeSel);
+                      const to = RECIPES.filter(r => r.parts.includes(treeSel!));
+                      const fmt = (r: typeof RECIPES[number]) => `${it(r.parts[0])!.icon}${it(r.parts[0])!.name}${r.parts[0] === r.parts[1] ? '×2' : ` + ${it(r.parts[1])!.icon}${it(r.parts[1])!.name}`} → ${it(r.result)!.icon}${it(r.result)!.name}`;
+                      return (
+                        <div className="text-[11px] text-amber-300/90 mt-1 leading-relaxed">
+                          {from.map((r, i) => <div key={`f${i}`}>🔨 合成自：{fmt(r)}</div>)}
+                          {to.map((r, i) => <div key={`t${i}`}>🔨 可合成：{fmt(r)}</div>)}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <button
+                    onClick={() => { setShowTree(false); setTreeSel(null); openDetail({ kind: 'codex', ctype: 'item', key: treeSel }); setShowModal(true); }}
+                    className="shrink-0 px-3 py-2 rounded border border-sky-500 text-sky-300 text-xs font-bold hover:bg-sky-950 min-h-[40px]">
+                    详情 ➤
+                  </button>
+                </div>
+              ) : (
+                <div className="text-xs text-zinc-500 flex items-center gap-2 h-full">
+                  <span className="text-xl opacity-40">👆</span>
+                  点击任意装备节点，高亮它的合成路线并在此查看简介
+                </div>
+              )}
             </div>
           </div>
         );
